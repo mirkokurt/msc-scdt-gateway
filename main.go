@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"strings"
+	//"strings"
+	"sync"
 
 	"github.com/go-ble/ble"
 	"github.com/go-ble/ble/examples/lib/dev"
@@ -16,12 +17,14 @@ import (
 var (
 	device = flag.String("device", "default", "implementation of ble")
 	name   = flag.String("name", "LED", "name of remote peripheral")
+	uuid   = flag.String("uuid", "19b10000e8f2537e4f6cd104768a1214", "uiid to search for")
 	du     = flag.Duration("du", 30*time.Second, "scanning duration")
 	dup    = flag.Bool("dup", true, "allow duplicate reported")
-	sub    = flag.Duration("sub", 0, "subscribe to notification and indication for a specified period")
+	sub    = flag.Duration("sub", 10*time.Second, "subscribe to notification and indication for a specified period")
 	sd     = flag.Duration("sd", 10*time.Second, "scanning duration, 0 for indefinitely")
 )
 
+var connectMuX sync.Mutex
 
 func main() {
 	flag.Parse()
@@ -32,9 +35,15 @@ func main() {
 	}
 	ble.SetDefaultDevice(d)
 
-	// Default to search device with name of LED (or specified by user).
+	// Default to search device with a service with UUID = "19b10000e8f2537e4f6cd104768a1214" (or specified by user).
 	filter := func(a ble.Advertisement) bool {
-		return strings.ToUpper(a.LocalName()) == strings.ToUpper(*name)
+		//return strings.ToUpper(a.LocalName()) == strings.ToUpper(*name)
+		for _, s := range a.Services() {
+			if s.Equal(ble.MustParse(*uuid)) {
+				return true
+			}	
+		}
+		return false
 	}
 
 	// Scan for specified durantion, or until interrupted by user.
@@ -51,38 +60,12 @@ func main() {
 	}()
 
 
-	ctx1 := ble.WithSigHandler(context.WithTimeout(context.Background(), *sd))
-	cln, err := ble.Connect(ctx1, filter)
-	if err != nil {
-		log.Fatalf("can't connect : %s", err)
-	}
-
-	// Make sure we had the chance to print out the message.
-	done := make(chan struct{})
-	// Normally, the connection is disconnected by us after our exploration.
-	// However, it can be asynchronously disconnected by the remote peripheral.
-	// So we wait(detect) the disconnection in the go routine.
-	go func() {
-		<-cln.Disconnected()
-		fmt.Printf("[ %s ] is disconnected \n", cln.Addr())
-		close(done)
-	}()
-
-	fmt.Printf("Discovering profile...\n")
-	p, err := cln.DiscoverProfile(true)
-	if err != nil {
-		log.Fatalf("can't discover profile: %s", err)
-	}
-
-	// Start the exploration.
-	explore(cln, p)
-
-	// Disconnect the connection. (On OS X, this might take a while.)
-	fmt.Printf("Disconnecting [ %s ]... (this might take up to few seconds on OS X)\n", cln.Addr())
-	cln.CancelConnection()
-
-	<-stopAdvertise
-	<-done
+	for j := 0; j < 5; j++ {
+	  fmt.Println("Ciclo numero %n", j)
+	  go peripheralConnect(filter)
+    	}
+	fmt.Printf("dopo for\n")
+    	<-stopAdvertise
 	
 }
 
@@ -104,12 +87,26 @@ func explore(cln ble.Client, p *ble.Profile) error {
 			fmt.Printf("      Characteristic: %s %s, Property: 0x%02X (%s), Handle(0x%02X), VHandle(0x%02X)\n",
 				c.UUID, ble.Name(c.UUID), c.Property, propString(c.Property), c.Handle, c.ValueHandle)
 			if (c.Property & ble.CharRead) != 0 {
+				//fmt.Printf("Time is: %n\n", time.Now().UnixNano())
 				b, err := cln.ReadCharacteristic(c)
 				if err != nil {
 					fmt.Printf("Failed to read characteristic: %s\n", err)
 					continue
 				}
+				//fmt.Printf("Time is: %n\n", time.Now().UnixNano())
 				fmt.Printf("        Value         %x | %q\n", b, b)
+			}
+
+			if c.UUID.Equal(ble.MustParse("19b10001e8f2537e4f6cd104768a1214")) {
+
+				for j := 0; j < 6; j++ {		
+					v := j%2
+					b := []byte{byte(v)}	
+					fmt.Printf("Scrivo valore %n\n", v)			
+					cln.WriteCharacteristic(c, b, false)
+					time.Sleep(1*time.Second)
+			    	}
+
 			}
 
 			for _, d := range c.Descriptors {
@@ -197,4 +194,50 @@ func chkErr(err error) {
 	default:
 		log.Fatalf(err.Error())
 	}
+}
+
+func peripheralConnect(filter func(ble.Advertisement) bool) {
+	
+	fmt.Printf("Creo context\n")
+	
+	ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 3600*time.Second))
+	
+	connectMuX.Lock()
+	fmt.Printf("prima di connect\n")
+	cln, err := ble.Connect(ctx, filter)
+	if err != nil {
+		fmt.Printf("can't connect : %s \n", err)
+		return
+	}
+	connectMuX.Unlock()
+	fmt.Printf("dopo connect\n")
+
+	// Make sure we had the chance to print out the message.
+	done := make(chan struct{})
+	// Normally, the connection is disconnected by us after our exploration.
+	// However, it can be asynchronously disconnected by the remote peripheral.
+	// So we wait(detect) the disconnection in the go routine.
+	go func() {
+		<-cln.Disconnected()
+		fmt.Printf("[ %s ] is disconnected \n", cln.Addr())
+		close(done)
+	}()
+
+
+	fmt.Printf("Discovering profile...\n")
+	p, err := cln.DiscoverProfile(true)
+	if err != nil {
+		fmt.Printf("can't discover profile: %s \n", err)
+		return
+	}
+
+	// Start the exploration.
+	explore(cln, p)
+
+	// Disconnect the connection. (On OS X, this might take a while.)
+	//fmt.Printf("Disconnecting [ %s ]... (this might take up to few seconds on OS X)\n", cln.Addr())
+	//cln.CancelConnection()
+	fmt.Printf("fine func\n")
+
+	<-done
 }
