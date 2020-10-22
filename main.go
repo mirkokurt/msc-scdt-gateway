@@ -8,6 +8,8 @@ import (
 	"time"
 	//"strings"
 	"sync"
+	"encoding/binary"
+	"encoding/hex"
 
 	"github.com/go-ble/ble"
 	"github.com/go-ble/ble/examples/lib/dev"
@@ -112,7 +114,7 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 							h := func(req []byte ) { 
 								fmt.Printf("Indicated: %q [ % X ]\n", string(req), req) 
 								fmt.Printf("Address is: %s\n", id1) 
-								formatContact(req)															
+								formatContact(id1, req)															
 							}
 							if err := cln.Subscribe(c, true, h); err != nil {
 								log.Fatalf("subscribe failed: %s", err)
@@ -141,14 +143,27 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 	return nil
 }
 
-func formatContact(req []byte) {
+func formatContact(id1 string, req []byte) {
+
+	b := []byte{128, 1, 255, 3, 6, 10, 152, 58, 0, 0, 1, 0, 218, 255, 191}
+
+	// payload example { mac, mac, mac, mac, mac, mac, TS, TS, TS, TS, dur dur, avgRSS, zone, zone }
+
+	id2_string := hex.EncodeToString(b[0:6])
+	fmt.Println("id_string is: %s \n", id2_string)
+	id2 := id2_string[10:12] + ":" + id2_string[8:10] + ":" + id2_string[6:8] + ":" + id2_string[4:6] + ":" + id2_string[2:4] + ":" + id2_string[0:2]
+	startTs := int64(binary.LittleEndian.Uint32(b[6:10]))
+	duration := int16(binary.LittleEndian.Uint16(b[10:12]))
+	avgRSSI := int8(b[12])
+	room := "Zone_" + string(binary.LittleEndian.Uint16(b[13:15]))
+
 	c := StoredContact{
-		ID1:  "iaisjfoaisja",
-		ID2:  "ciidajds",
-		TS:   12345,
-		Dur:  1,
-		Room: "ciao",
-		Dist: 1,
+		ID1:  id1,
+		ID2:  id2,
+		TS:   startTs,
+		Dur:  duration,
+		Room: room,
+		AvgRSSI: avgRSSI,
 	}
 	// Put the contact into the splunk channel for processing storage
 	splunkChannel <- c

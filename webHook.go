@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"log"
+	//"log"
 	"net/http"
 )
 
@@ -21,7 +21,7 @@ func sendWebHook(contact StoredContact) {
 		fmt.Printf("Error: %s", err)
 		return
 	}
-	fmt.Printf("Value: %s", jsonContact)
+	//fmt.Printf("Value: %s", jsonContact)
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	req, err := http.NewRequest("POST", WebHookURL, bytes.NewBuffer(jsonContact))
@@ -30,10 +30,8 @@ func sendWebHook(contact StoredContact) {
 		req.Header.Add(APIKey, APIValue)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	_, err = http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending the contact to the web hook, %v", err)
-	} else {
-		log.Printf("New contact written, %v", resp)
-	}
+	} 
 }
