@@ -12,7 +12,7 @@ import (
 	"github.com/go-ble/ble"
 	"github.com/go-ble/ble/examples/lib/dev"
 	"github.com/pkg/errors"
-	//"github.com/go-ble/ble/linux/adv"
+	//"github.com/go-ble/ble/linux/adv" 
 )
 
 var (
@@ -23,12 +23,23 @@ var (
 	dup    = flag.Bool("dup", true, "allow duplicate reported")
 	sub    = flag.Duration("sub", 10*time.Second, "subscribe to notification and indication for a specified period")
 	sd     = flag.Duration("sd", 10*time.Second, "scanning duration, 0 for indefinitely")
+	argWebHook = flag.String("send_web_hook", "https://webhook.site/222fae5c-dab0-4018-92a4-d1bf5aefb3bd", "Send contacts to a web hook")
+	argWebHookAPIKey = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
+	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
 )
 
 var connectMuX sync.Mutex
 
 func main() {
 	flag.Parse()
+	
+	WebHookURL = *argWebHook
+	APIKey = *argWebHookAPIKey
+	APIValue = *argWebHookAPIValue
+	
+	splunkChannel = make(chan StoredContact, 5000)
+	
+	go storeContacts(splunkChannel)
 
 	d, err := dev.NewDevice(*device)
 	if err != nil {
@@ -97,7 +108,12 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 					if *sub != 0 {
 						if (c.Property & ble.CharIndicate) != 0 {
 							fmt.Printf("\n-- Subscribe to indication of %s --\n", *sub)
-							h := func(req []byte) { fmt.Printf("Indicated: %q [ % X ]\n", string(req), req) }
+							id1 := cln.Addr().String()
+							h := func(req []byte ) { 
+								fmt.Printf("Indicated: %q [ % X ]\n", string(req), req) 
+								fmt.Printf("Address is: %s\n", id1) 
+								formatContact(req)															
+							}
 							if err := cln.Subscribe(c, true, h); err != nil {
 								log.Fatalf("subscribe failed: %s", err)
 							}
@@ -123,6 +139,20 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 		}
 	}
 	return nil
+}
+
+func formatContact(req []byte) {
+	c := StoredContact{
+		ID1:  "iaisjfoaisja",
+		ID2:  "ciidajds",
+		TS:   12345,
+		Dur:  1,
+		Room: "ciao",
+		Dist: 1,
+	}
+	// Put the contact into the splunk channel for processing storage
+	splunkChannel <- c
+
 }
 
 func propString(p ble.Property) string {
@@ -193,5 +223,19 @@ func peripheralConnect(filter func(ble.Advertisement) bool) {
 		exploreAndSubscribe(cln, p)
 
 		<-done
+	}
+}
+
+
+
+func storeContacts(splunkChannel chan StoredContact) {
+	for {
+		c := <-splunkChannel
+		//fmt.Println(c)
+
+		sendWebHook(c)
+
+		// Not send too fast
+		time.Sleep(1 * time.Second)
 	}
 }
