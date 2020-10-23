@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	//"log"
 	"net/http"
 )
 
@@ -33,5 +32,5 @@ func sendWebHook(contact StoredContact) {
 	_, err = http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending the contact to the web hook, %v", err)
-	} 
+	}
 }

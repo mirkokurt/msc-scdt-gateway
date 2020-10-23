@@ -6,28 +6,30 @@ import (
 	"fmt"
 	"log"
 	"time"
+
 	//"strings"
-	"sync"
 	"encoding/binary"
 	"encoding/hex"
+	"sync"
 
 	"github.com/go-ble/ble"
 	"github.com/go-ble/ble/examples/lib/dev"
 	"github.com/pkg/errors"
-	//"github.com/go-ble/ble/linux/adv" 
+	//"github.com/go-ble/ble/linux/adv"
 )
 
 var (
 	device = flag.String("device", "default", "implementation of ble")
 	name   = flag.String("name", "LED", "name of remote peripheral")
 	//uuid   = flag.String("uuid", "19b10000e8f2537e4f6cd104768a1214", "uiid to search for")
-	uuid   = flag.String("uuid", "6e0e5437-0c82-4a6c-8c6b-503fad255e03", "uiid to search for")
-	du     = flag.Duration("du", 60*time.Second, "scanning duration")
-	dup    = flag.Bool("dup", true, "allow duplicate reported")
-	sub    = flag.Duration("sub", 60*time.Second, "subscribe to notification and indication for a specified period")
-	sd     = flag.Duration("sd", 10*time.Second, "scanning duration, 0 for indefinitely")
-	argWebHook = flag.String("send_web_hook", "https://webhook.site/222fae5c-dab0-4018-92a4-d1bf5aefb3bd", "Send contacts to a web hook")
-	argWebHookAPIKey = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
+	serviceUuid        = flag.String("sUuid", "6e0e5437-0c82-4a6c-8c6b-503fad255e03", "uiid to search for")
+	characteristicUuid = flag.String("cUuid", "87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb", "uiid to search for")
+	du                 = flag.Duration("du", 60*time.Second, "scanning duration")
+	sub                = flag.Duration("sub", 60*time.Second, "subscribe to notification and indication for a specified period")
+	serverAddr         = flag.String("server_addr", "localhost", "Address of the server with the data collector and other features")
+	argWebHook         = flag.String("send_web_hook", "https://webhook.site/222fae5c-dab0-4018-92a4-d1bf5aefb3bd", "Send contacts to a web hook")
+	parametersUrl      = flag.String("param_url", ":8089/servicesNS/nobody/search/storage/collections/data/kvcollcontactstracing/PARAMETER", "Url used to recover parameters value")
+	argWebHookAPIKey   = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
 )
 
@@ -35,14 +37,14 @@ var connectMuX sync.Mutex
 
 func main() {
 	flag.Parse()
-	
+
 	WebHookURL = *argWebHook
 	APIKey = *argWebHookAPIKey
 	APIValue = *argWebHookAPIValue
-	
-	splunkChannel = make(chan StoredContact, 5000)
-	
-	go storeContacts(splunkChannel)
+
+	SplunkChannel = make(chan StoredContact, 5000)
+
+	go storeContacts(SplunkChannel)
 
 	d, err := dev.NewDevice(*device)
 	if err != nil {
@@ -54,44 +56,30 @@ func main() {
 	filter := func(a ble.Advertisement) bool {
 		//return strings.ToUpper(a.LocalName()) == strings.ToUpper(*name)
 		for _, s := range a.Services() {
-			if s.Equal(ble.MustParse(*uuid)) {
+			if s.Equal(ble.MustParse(*serviceUuid)) {
 				return true
-			}	
+			}
 		}
 		return false
 	}
 
-	// Scan for specified durantion, or until interrupted by user.
-	//fmt.Printf("Scanning for %s...\n", *du)
-	//chkErr(ble.Scan(ctx, *dup, advHandler, nil))
-
 	stopAdvertise := make(chan struct{})
-	//Start advertising
-	go func() {
- 		b:= []byte{1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5 }
-		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), *du))
-		chkErr(d.AdvertiseMfgData(ctx, 555, b))
-		//ad, _ := adv.NewPacket(adv.Flags(adv.FlagGeneralDiscoverable | adv.FlagLEOnly))
-		//ad.Append(adv.CompleteName("Contact Gateway"))
-		//manufacuturerData := adv.ManufacturerData(555, b)
-		//ad.Append(manufacuturerData)
-		//d.HCI.SetAdvertisement(ad.Bytes(), nil)
-		//d.HCI.Advertise()
-		//chkErr(d.Advertise(ctx, ad))
-		
-		close(stopAdvertise)
-	}()
-
+	go advertising(d)
 
 	for j := 0; j < 5; j++ {
-	  go peripheralConnect(filter)
-    	}
+		go peripheralConnect(filter)
+	}
 
+	<-stopAdvertise
 
-    	<-stopAdvertise
-	
 }
 
+//Start advertising
+func advertising(d ble.Device) {
+	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), *du))
+	chkErr(d.AdvertiseMfgData(ctx, 555, b))
+}
 
 func advHandler(a ble.Advertisement) {
 
@@ -101,39 +89,30 @@ func advHandler(a ble.Advertisement) {
 	fmt.Printf("\n")
 }
 
-
 func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 	for _, s := range p.Services {
 		fmt.Printf("    Service: %s %s, Handle (0x%02X)\n", s.UUID, ble.Name(s.UUID), s.Handle)
 		//if s.UUID.Equal(ble.MustParse("19b10000e8f2537e4f6cd104768a1214")) {
-		if s.UUID.Equal(ble.MustParse("6e0e5437-0c82-4a6c-8c6b-503fad255e03")) {
+		if s.UUID.Equal(ble.MustParse(*serviceUuid)) {
 			for _, c := range s.Characteristics {
 				//if c.UUID.Equal(ble.MustParse("19b10001e8f2537e4f6cd104768a1214")) {
-				if c.UUID.Equal(ble.MustParse("87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb")) {
+				if c.UUID.Equal(ble.MustParse(*characteristicUuid)) {
 					if *sub != 0 {
 						if (c.Property & ble.CharIndicate) != 0 {
 							fmt.Printf("\n-- Subscribe to indication of %s --\n", *sub)
 							id1 := cln.Addr().String()
-							h := func(req []byte ) { 
-								fmt.Print("Time is: ")
-								fmt.Println(time.Now().UnixNano())
-								fmt.Printf("Indicated: %q [ % X ]\n", string(req), req) 
-								fmt.Printf("Address is: %s\n", id1) 
-								formatContact(id1, req)															
+							prec := time.Now().UnixNano()
+							h := func(req []byte) {
+								fmt.Printf("Address is: %s\n", id1)
+								diff := time.Now().UnixNano() - prec
+								fmt.Print("Diff is: ")
+								fmt.Println(diff)
+								prec = time.Now().UnixNano()
+								formatContact(id1, req)
 							}
 							if err := cln.Subscribe(c, true, h); err != nil {
 								log.Fatalf("subscribe failed: %s", err)
 							}
-							/*
-							//Test for LED
-							for j := 0; j < 6; j++ {		
-								v := j%2
-								b := []byte{byte(v)}	
-								fmt.Printf("Scrivo valore %n\n", v)			
-								cln.WriteCharacteristic(c, b, false)
-								time.Sleep(1*time.Second)
-						    	}
-							*/
 							time.Sleep(*sub)
 							if err := cln.Unsubscribe(c, true); err != nil {
 								log.Fatalf("unsubscribe failed: %s", err)
@@ -150,30 +129,24 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 
 func formatContact(id1 string, b []byte) {
 
-
-
-	//b := []byte{128, 1, 255, 3, 6, 10, 152, 58, 0, 0, 1, 0, 218, 255, 191}
-
-	// payload example { mac, mac, mac, mac, mac, mac, TS, TS, TS, TS, dur dur, avgRSS, zone, zone }
-
+	// payload example { mac, mac, mac, mac, mac, mac, TS, TS, TS, TS, dur dur, avgRSS, zone, zone {128, 1, 255, 3, 6, 10, 152, 58, 0, 0, 1, 0, 218, 255, 191}
 	id2_string := hex.EncodeToString(b[0:6])
-	fmt.Println("id_string is: %s \n", id2_string)
 	id2 := id2_string[10:12] + ":" + id2_string[8:10] + ":" + id2_string[6:8] + ":" + id2_string[4:6] + ":" + id2_string[2:4] + ":" + id2_string[0:2]
 	startTs := int64(binary.LittleEndian.Uint32(b[6:10]))
 	duration := int16(binary.LittleEndian.Uint16(b[10:12]))
 	avgRSSI := int8(b[12])
-	room := "Zone_" + string(binary.LittleEndian.Uint16(b[13:15]))
+	room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
 
 	c := StoredContact{
-		ID1:  id1,
-		ID2:  id2,
-		TS:   startTs,
-		Dur:  duration,
-		Room: room,
+		ID1:     id1,
+		ID2:     id2,
+		TS:      startTs,
+		Dur:     duration,
+		Room:    room,
 		AvgRSSI: avgRSSI,
 	}
 	// Put the contact into the splunk channel for processing storage
-	splunkChannel <- c
+	SplunkChannel <- c
 
 }
 
@@ -209,12 +182,11 @@ func chkErr(err error) {
 }
 
 func peripheralConnect(filter func(ble.Advertisement) bool) {
-	
-	
+
 	ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 60*time.Second))
 
 	for {
-	
+
 		connectMuX.Lock()
 		fmt.Printf("prima di connect\n")
 		cln, err := ConnectWithDuplicate(ctx, filter)
@@ -239,7 +211,6 @@ func peripheralConnect(filter func(ble.Advertisement) bool) {
 			fmt.Printf("can't discover profile: %s \n", err)
 			return
 		}
-		
 
 		// Start the exploration.
 		exploreAndSubscribe(cln, p)
@@ -248,17 +219,14 @@ func peripheralConnect(filter func(ble.Advertisement) bool) {
 	}
 }
 
-
-
-func storeContacts(splunkChannel chan StoredContact) {
+func storeContacts(SplunkChannel chan StoredContact) {
 	for {
-		c := <-splunkChannel
-		//fmt.Println(c)
+		c := <-SplunkChannel
 
 		sendWebHook(c)
 
 		// Not send too fast
-		time.Sleep(1 * time.Second)
+		//time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -287,5 +255,3 @@ func ConnectWithDuplicate(ctx context.Context, f ble.AdvFilter) (ble.Client, err
 	cln, err := ble.Dial(ctx, (<-ch).Addr())
 	return cln, errors.Wrap(err, "can't dial")
 }
-
-
