@@ -20,10 +20,11 @@ import (
 var (
 	device = flag.String("device", "default", "implementation of ble")
 	name   = flag.String("name", "LED", "name of remote peripheral")
-	uuid   = flag.String("uuid", "19b10000e8f2537e4f6cd104768a1214", "uiid to search for")
-	du     = flag.Duration("du", 30*time.Second, "scanning duration")
+	//uuid   = flag.String("uuid", "19b10000e8f2537e4f6cd104768a1214", "uiid to search for")
+	uuid   = flag.String("uuid", "6e0e5437-0c82-4a6c-8c6b-503fad255e03", "uiid to search for")
+	du     = flag.Duration("du", 60*time.Second, "scanning duration")
 	dup    = flag.Bool("dup", true, "allow duplicate reported")
-	sub    = flag.Duration("sub", 10*time.Second, "subscribe to notification and indication for a specified period")
+	sub    = flag.Duration("sub", 60*time.Second, "subscribe to notification and indication for a specified period")
 	sd     = flag.Duration("sd", 10*time.Second, "scanning duration, 0 for indefinitely")
 	argWebHook = flag.String("send_web_hook", "https://webhook.site/222fae5c-dab0-4018-92a4-d1bf5aefb3bd", "Send contacts to a web hook")
 	argWebHookAPIKey = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
@@ -104,14 +105,18 @@ func advHandler(a ble.Advertisement) {
 func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 	for _, s := range p.Services {
 		fmt.Printf("    Service: %s %s, Handle (0x%02X)\n", s.UUID, ble.Name(s.UUID), s.Handle)
-		if s.UUID.Equal(ble.MustParse("19b10000e8f2537e4f6cd104768a1214")) {
+		//if s.UUID.Equal(ble.MustParse("19b10000e8f2537e4f6cd104768a1214")) {
+		if s.UUID.Equal(ble.MustParse("6e0e5437-0c82-4a6c-8c6b-503fad255e03")) {
 			for _, c := range s.Characteristics {
-				if c.UUID.Equal(ble.MustParse("19b10001e8f2537e4f6cd104768a1214")) {
+				//if c.UUID.Equal(ble.MustParse("19b10001e8f2537e4f6cd104768a1214")) {
+				if c.UUID.Equal(ble.MustParse("87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb")) {
 					if *sub != 0 {
 						if (c.Property & ble.CharIndicate) != 0 {
 							fmt.Printf("\n-- Subscribe to indication of %s --\n", *sub)
 							id1 := cln.Addr().String()
 							h := func(req []byte ) { 
+								fmt.Print("Time is: ")
+								fmt.Println(time.Now().UnixNano())
 								fmt.Printf("Indicated: %q [ % X ]\n", string(req), req) 
 								fmt.Printf("Address is: %s\n", id1) 
 								formatContact(id1, req)															
@@ -119,7 +124,7 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 							if err := cln.Subscribe(c, true, h); err != nil {
 								log.Fatalf("subscribe failed: %s", err)
 							}
-							
+							/*
 							//Test for LED
 							for j := 0; j < 6; j++ {		
 								v := j%2
@@ -128,7 +133,7 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 								cln.WriteCharacteristic(c, b, false)
 								time.Sleep(1*time.Second)
 						    	}
-
+							*/
 							time.Sleep(*sub)
 							if err := cln.Unsubscribe(c, true); err != nil {
 								log.Fatalf("unsubscribe failed: %s", err)
@@ -143,9 +148,11 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 	return nil
 }
 
-func formatContact(id1 string, req []byte) {
+func formatContact(id1 string, b []byte) {
 
-	b := []byte{128, 1, 255, 3, 6, 10, 152, 58, 0, 0, 1, 0, 218, 255, 191}
+
+
+	//b := []byte{128, 1, 255, 3, 6, 10, 152, 58, 0, 0, 1, 0, 218, 255, 191}
 
 	// payload example { mac, mac, mac, mac, mac, mac, TS, TS, TS, TS, dur dur, avgRSS, zone, zone }
 
@@ -210,7 +217,7 @@ func peripheralConnect(filter func(ble.Advertisement) bool) {
 	
 		connectMuX.Lock()
 		fmt.Printf("prima di connect\n")
-		cln, err := ble.Connect(ctx, filter)
+		cln, err := ConnectWithDuplicate(ctx, filter)
 		if err != nil {
 			fmt.Printf("can't connect : %s \n", err)
 			return
@@ -254,3 +261,31 @@ func storeContacts(splunkChannel chan StoredContact) {
 		time.Sleep(1 * time.Second)
 	}
 }
+
+// Connect searches for and connects to a Peripheral which matches specified condition.
+func ConnectWithDuplicate(ctx context.Context, f ble.AdvFilter) (ble.Client, error) {
+	ctx2, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-ctx.Done():
+			cancel()
+		case <-ctx2.Done():
+		}
+	}()
+
+	ch := make(chan ble.Advertisement)
+	fn := func(a ble.Advertisement) {
+		cancel()
+		ch <- a
+	}
+	if err := ble.Scan(ctx2, true, fn, f); err != nil {
+		if err != context.Canceled {
+			return nil, errors.Wrap(err, "can't scan")
+		}
+	}
+
+	cln, err := ble.Dial(ctx, (<-ch).Addr())
+	return cln, errors.Wrap(err, "can't dial")
+}
+
+
