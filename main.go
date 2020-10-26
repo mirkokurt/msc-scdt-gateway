@@ -27,7 +27,7 @@ var (
 	du                 = flag.Duration("du", 60*time.Second, "scanning duration")
 	sub                = flag.Duration("sub", 60*time.Second, "subscribe to notification and indication for a specified period")
 	serverAddr         = flag.String("server_addr", "localhost", "Address of the server with the data collector and other features")
-	argWebHook         = flag.String("send_web_hook", "https://webhook.site/222fae5c-dab0-4018-92a4-d1bf5aefb3bd", "Send contacts to a web hook")
+	argWebHook         = flag.String("send_web_hook", "https://webhook.site/f472fdde-ac7a-47c0-95c3-78827e527667", "Send contacts to a web hook")
 	parametersUrl      = flag.String("param_url", ":8089/servicesNS/nobody/search/storage/collections/data/kvcollcontactstracing/PARAMETER", "Url used to recover parameters value")
 	argWebHookAPIKey   = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
@@ -76,7 +76,7 @@ func main() {
 
 //Start advertising
 func advertising(d ble.Device) {
-	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), *du))
 	chkErr(d.AdvertiseMfgData(ctx, 555, b))
 }
@@ -129,25 +129,66 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 
 func formatContact(id1 string, b []byte) {
 
-	// payload example { mac, mac, mac, mac, mac, mac, TS, TS, TS, TS, dur dur, avgRSS, zone, zone {128, 1, 255, 3, 6, 10, 152, 58, 0, 0, 1, 0, 218, 255, 191}
-	id2_string := hex.EncodeToString(b[0:6])
-	id2 := id2_string[10:12] + ":" + id2_string[8:10] + ":" + id2_string[6:8] + ":" + id2_string[4:6] + ":" + id2_string[2:4] + ":" + id2_string[0:2]
-	startTs := int64(binary.LittleEndian.Uint32(b[6:10]))
-	duration := int16(binary.LittleEndian.Uint16(b[10:12]))
-	avgRSSI := int8(b[12])
-	room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
+	id2_check := uint32(binary.LittleEndian.Uint16(b[0:2])) + binary.LittleEndian.Uint32(b[2:6])
 
-	c := StoredContact{
-		ID1:     id1,
-		ID2:     id2,
-		TS:      startTs,
-		Dur:     duration,
-		Room:    room,
-		AvgRSSI: avgRSSI,
+	// if id2 = 0, this is a state message
+	// payload example { 0, 0, 0, 0, 0, 0, syncTS, syncTS, syncTS, syncTS, totalContact, totalContact, batteryLevel, batteryLevel }
+	if id2_check == 0 {
+		fmt.Printf("Arra is % X:", b)
+		syncTS := int64(binary.LittleEndian.Uint32(b[6:10]))
+		totalContact := int16(binary.LittleEndian.Uint16(b[10:12]))
+		batteryLevel := int16(binary.LittleEndian.Uint16(b[12:14]))
+
+		ts, found := tagsState.Load(id1)
+		if found {
+			ts.(*TagState).LastSeen = nowTimestamp()
+			ts.(*TagState).SyncTime = nowTimestamp() - syncTS
+			ts.(*TagState).TotalContact = totalContact
+			ts.(*TagState).BatteryLevel = batteryLevel
+		} else {
+			var its TagState
+			its.TagID = id1
+			its.LastSeen = nowTimestamp()
+			its.SyncTime = nowTimestamp() - syncTS
+			its.TotalContact = totalContact
+			its.BatteryLevel = batteryLevel
+			tagsState.Store(id1, &its)
+		}
+
+	} else {
+		// otherwise it is a contact message
+		// payload example { mac, mac, mac, mac, mac, mac, TS, TS, TS, TS, dur dur, avgRSS, zone, zone} : {128, 1, 255, 3, 6, 10, 152, 58, 0, 0, 1, 0, 218, 255, 191}
+		id2_string := hex.EncodeToString(b[0:6])
+		id2 := id2_string[10:12] + ":" + id2_string[8:10] + ":" + id2_string[6:8] + ":" + id2_string[4:6] + ":" + id2_string[2:4] + ":" + id2_string[0:2]
+		startTs := int64(binary.LittleEndian.Uint32(b[6:10]))
+		duration := int16(binary.LittleEndian.Uint16(b[10:12]))
+		avgRSSI := int8(b[12])
+		room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
+
+		adjustedTs := nowTimestamp()
+		ts, found := tagsState.Load(id1)
+		// If the sync time is found and it is different from 0, compute the adjusted time otherwise use time.now()
+		if found {
+			adjustedTs = (startTs + ts.(*TagState).SyncTime)
+		} else {
+			fmt.Println("Error: no last sync time found for the tag : ", id1)
+		}
+
+		c := StoredContact{
+			ID1:     id1,
+			ID2:     id2,
+			TS:      adjustedTs,
+			Dur:     duration,
+			Room:    room,
+			AvgRSSI: avgRSSI,
+		}
+		// Put the contact into the splunk channel for processing storage
+		SplunkChannel <- c
 	}
-	// Put the contact into the splunk channel for processing storage
-	SplunkChannel <- c
+}
 
+func nowTimestamp() int64 {
+	return time.Now().UnixNano() / (int64(time.Millisecond) / int64(time.Nanosecond))
 }
 
 func propString(p ble.Property) string {
@@ -201,7 +242,9 @@ func peripheralConnect(filter func(ble.Advertisement) bool) {
 		done := make(chan struct{})
 		go func() {
 			<-cln.Disconnected()
-			fmt.Printf("[ %s ] is disconnected \n", cln.Addr())
+			tagId := cln.Addr().String()
+			fmt.Printf("[ %s ] is disconnected \n", tagId)
+			storeState(tagId)
 			close(done)
 		}()
 
@@ -219,11 +262,19 @@ func peripheralConnect(filter func(ble.Advertisement) bool) {
 	}
 }
 
+func storeState(TagId string) {
+	fmt.Printf("Sending state for tag %s \n", TagId)
+	ts, found := tagsState.Load(TagId)
+	if found {
+		sendStateToWebHook(ts.(*TagState))
+	}
+}
+
 func storeContacts(SplunkChannel chan StoredContact) {
 	for {
 		c := <-SplunkChannel
 
-		sendWebHook(c)
+		sendContactToWebHook(c)
 
 		// Not send too fast
 		//time.Sleep(100 * time.Millisecond)

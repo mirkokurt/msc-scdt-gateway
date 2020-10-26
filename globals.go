@@ -1,8 +1,15 @@
 package main
 
-// WebHookMessage json body to be sent to the webhook
-type webHookMessage struct {
+import "sync"
+
+// webContactHookMessage json body to be sent to the webhook
+type webContactHookMessage struct {
 	Event StoredContact `json:"event"`
+}
+
+// WebStateHookMessage json body to be sent to the webhook
+type webStateHookMessage struct {
+	Event TagState `json:"event"`
 }
 
 // StoredContact - Contact to be stored into Cloud or Database
@@ -14,6 +21,19 @@ type StoredContact struct {
 	Room    string  `json:"room,omitempty"`
 	Dist    float64 `json:"dist,omitempty"`
 	AvgRSSI int8    `json:"avgRSSI,omitempty"`
+}
+
+// Current tags state
+var tagsState sync.Map
+
+// TagState - Last seen state of a tag
+type TagState struct {
+	TagID        string `json:"TagID"`
+	LastSeen     int64  `json:"LastSeen,omitempty"`
+	SyncTime     int64  `json:"SyncTime,omitempty"`
+	BatteryLevel int16  `json:"BatteryLevel,omitempty"`
+	TotalContact int16  `json:"TotalContact,omitempty"`
+	SyncContact  int16  `json:"SyncContact,omitempty"`
 }
 
 type ParameterPayload struct {

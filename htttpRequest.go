@@ -8,7 +8,7 @@ import (
 	"net/http"
 )
 
-var bearerToken = "Bearer eyJraWQiOiJzcGx1bmsuc2VjcmV0IiwiYWxnIjoiSFM1MTIiLCJ2ZXIiOiJ2MiIsInR0eXAiOiJzdGF0aWMifQ.eyJpc3MiOiJhbmRyZWFjYXRvenppIGZyb20gTWFjQm9vay1Qcm8tZGktQW5kcmVhLmxvY2FsIiwic3ViIjoiYW5kcmVhY2F0b3p6aSIsImF1ZCI6IlJFQURfUEFSQU0iLCJpZHAiOiJTcGx1bmsiLCJqdGkiOiJhMDdkOGY1NmY4Y2VkYTNmMTQ4YjM5OGU5Mzk0N2E0MDJhZTY2NTg4OTVhYWQ3YzgwYTA3ZGI3Njc3YzA2YWZjIiwiaWF0IjoxNjAzNDQ5MzAwLCJleHAiOjI1NTAxNzUxNDAsIm5iciI6MTYwMzQ0OTMwMH0.CNqDash5AL-sB-_EE3gav71M39HnqBEUMXWNNshREzSuROtAWckLo60SNghT6QkBrtBlRu7SdzeaVj4tXr5GKw"
+var bearerToken = "Bearer xxx"
 
 func readParamenters() (b []byte) {
 
