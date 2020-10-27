@@ -71,5 +71,14 @@ var APIValue string
 // splunkChannel - Channel to be shared between routines in order to store contacts
 var SplunkChannel chan StoredContact
 
-// SplunkAddress - Channel to be shared between routines in order to store contacts
+// SplunkAddress - Ip address of the Splunk server
 var SplunkAddress string
+
+// MaxConnections - Max number of parallel connections to tags
+var MaxConnections int
+
+// StartedConnections - Number of started parallel connections to tags
+var StartedConnections int
+
+// StartedRoutines - Number of started parallel connection routines
+var StartedRoutines int

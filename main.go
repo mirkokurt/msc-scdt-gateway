@@ -15,7 +15,6 @@ import (
 	"github.com/go-ble/ble"
 	"github.com/go-ble/ble/examples/lib/dev"
 	"github.com/pkg/errors"
-	//"github.com/go-ble/ble/linux/adv"
 )
 
 var (
@@ -31,6 +30,7 @@ var (
 	parametersUrl      = flag.String("param_url", ":8089/servicesNS/nobody/search/storage/collections/data/kvcollcontactstracing/PARAMETER", "Url used to recover parameters value")
 	argWebHookAPIKey   = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
+	argMaxConnections  = flag.Int("max_connections", 5, "Max number of parallel connections to tags")
 )
 
 var connectMuX sync.Mutex
@@ -41,6 +41,7 @@ func main() {
 	WebHookURL = *argWebHook
 	APIKey = *argWebHookAPIKey
 	APIValue = *argWebHookAPIValue
+	MaxConnections = *argMaxConnections
 
 	SplunkChannel = make(chan StoredContact, 5000)
 
@@ -52,9 +53,8 @@ func main() {
 	}
 	ble.SetDefaultDevice(d)
 
-	// Default to search device with a service with UUID = "19b10000e8f2537e4f6cd104768a1214" (or specified by user).
+	// Default to search device with a service with UUID specified by user
 	filter := func(a ble.Advertisement) bool {
-		//return strings.ToUpper(a.LocalName()) == strings.ToUpper(*name)
 		for _, s := range a.Services() {
 			if s.Equal(ble.MustParse(*serviceUuid)) {
 				return true
@@ -66,7 +66,8 @@ func main() {
 	stopAdvertise := make(chan struct{})
 	go advertising(d)
 
-	for j := 0; j < 5; j++ {
+	for j := 0; j < MaxConnections; j++ {
+		fmt.Printf("Routine number: %d \n", j)
 		go peripheralConnect(filter)
 	}
 
@@ -77,16 +78,11 @@ func main() {
 //Start advertising
 func advertising(d ble.Device) {
 	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), *du))
-	chkErr(d.AdvertiseMfgData(ctx, 555, b))
-}
-
-func advHandler(a ble.Advertisement) {
-
-	if a.LocalName() == "SyncCont" {
-		fmt.Printf(" Name: %s", a.LocalName())
+	for {
+		//TODO send an http request to retrieve parameters
+		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 60*5*time.Second))
+		chkErr(d.AdvertiseMfgData(ctx, 555, b))
 	}
-	fmt.Printf("\n")
 }
 
 func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
@@ -113,11 +109,8 @@ func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
 							if err := cln.Subscribe(c, true, h); err != nil {
 								log.Fatalf("subscribe failed: %s", err)
 							}
-							time.Sleep(*sub)
-							if err := cln.Unsubscribe(c, true); err != nil {
-								log.Fatalf("unsubscribe failed: %s", err)
-							}
-							fmt.Printf("-- Unsubscribe to indication --\n")
+
+							<-cln.Disconnected()
 						}
 					}
 				}
@@ -227,41 +220,40 @@ func chkErr(err error) {
 
 func peripheralConnect(filter func(ble.Advertisement) bool) {
 
-	ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 60*time.Second))
-
 	for {
+		fmt.Printf("Routine started\n")
+		ctx := context.Background()
 
 		connectMuX.Lock()
-		fmt.Printf("prima di connect\n")
 		cln, err := ConnectWithDuplicate(ctx, filter)
 		if err != nil {
 			fmt.Printf("can't connect : %s \n", err)
-			return
+			continue
 		}
 		connectMuX.Unlock()
-		fmt.Printf("dopo connect\n")
+		StartedConnections++
 
 		// Define a channel to intercept the end fo communication if its closed by the device
-		done := make(chan struct{})
+		closedConnection := make(chan struct{})
 		go func() {
 			<-cln.Disconnected()
 			tagId := cln.Addr().String()
 			fmt.Printf("[ %s ] is disconnected \n", tagId)
 			storeState(tagId)
-			close(done)
+			close(closedConnection)
 		}()
 
 		fmt.Printf("Discovering profile...\n")
 		p, err := cln.DiscoverProfile(true)
 		if err != nil {
 			fmt.Printf("can't discover profile: %s \n", err)
-			return
+			continue
 		}
 
 		// Start the exploration.
 		exploreAndSubscribe(cln, p)
 
-		<-done
+		<-closedConnection
 	}
 }
 
@@ -269,6 +261,7 @@ func storeState(TagId string) {
 	fmt.Printf("Sending state for tag %s \n", TagId)
 	ts, found := tagsState.Load(TagId)
 	if found {
+		fmt.Printf("Sending state %+v \n", ts)
 		sendStateToWebHook(ts.(*TagState))
 	}
 }
@@ -276,7 +269,7 @@ func storeState(TagId string) {
 func storeContacts(SplunkChannel chan StoredContact) {
 	for {
 		c := <-SplunkChannel
-
+		fmt.Printf("Sending contact %+v \n", c)
 		sendContactToWebHook(c)
 
 		// Not send too fast
@@ -290,7 +283,7 @@ func ConnectWithDuplicate(ctx context.Context, f ble.AdvFilter) (ble.Client, err
 	go func() {
 		select {
 		case <-ctx.Done():
-			cancel()
+			//cancel()
 		case <-ctx2.Done():
 		}
 	}()
@@ -300,6 +293,7 @@ func ConnectWithDuplicate(ctx context.Context, f ble.AdvFilter) (ble.Client, err
 		cancel()
 		ch <- a
 	}
+	fmt.Printf("Starting a connection \n")
 	if err := ble.Scan(ctx2, true, fn, f); err != nil {
 		if err != context.Canceled {
 			return nil, errors.Wrap(err, "can't scan")
