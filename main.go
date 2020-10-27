@@ -144,6 +144,7 @@ func formatContact(id1 string, b []byte) {
 			ts.(*TagState).LastSeen = nowTimestamp()
 			ts.(*TagState).SyncTime = nowTimestamp() - syncTS
 			ts.(*TagState).TotalContact = totalContact
+			ts.(*TagState).SyncContact = 0
 			ts.(*TagState).BatteryLevel = batteryLevel
 		} else {
 			var its TagState
@@ -151,6 +152,7 @@ func formatContact(id1 string, b []byte) {
 			its.LastSeen = nowTimestamp()
 			its.SyncTime = nowTimestamp() - syncTS
 			its.TotalContact = totalContact
+			its.SyncContact = 0
 			its.BatteryLevel = batteryLevel
 			tagsState.Store(id1, &its)
 		}
@@ -170,6 +172,7 @@ func formatContact(id1 string, b []byte) {
 		// If the sync time is found and it is different from 0, compute the adjusted time otherwise use time.now()
 		if found {
 			adjustedTs = (startTs + ts.(*TagState).SyncTime)
+			ts.(*TagState).SyncContact += 1
 		} else {
 			fmt.Println("Error: no last sync time found for the tag : ", id1)
 		}
