@@ -49,7 +49,7 @@ func main() {
 
 	d, err := dev.NewDevice(*device)
 	if err != nil {
-		log.Fatalf("can't new device : %s", err)
+		log.Fatalf("can't create new device : %s", err)
 	}
 	ble.SetDefaultDevice(d)
 
@@ -57,21 +57,78 @@ func main() {
 	filter := func(a ble.Advertisement) bool {
 		for _, s := range a.Services() {
 			if s.Equal(ble.MustParse(*serviceUuid)) {
+				//fmt.Printf("Found the service %s for the device %s \n", s, a.Addr())
 				return true
 			}
 		}
 		return false
 	}
 
-	stopAdvertise := make(chan struct{})
+	//stopAdvertise := make(chan struct{})
 	go advertising(d)
 
-	for j := 0; j < MaxConnections; j++ {
-		fmt.Printf("Routine number: %d \n", j)
-		go peripheralConnect(filter)
+	ctx := context.Background()
+	for {
+		ctx1, cancel := context.WithCancel(ctx)
+
+		ch := make(chan ble.Advertisement)
+		fn := func(a ble.Advertisement) {
+			cancel()
+			ch <- a
+		}
+		fmt.Printf("Starting scanning... \n")
+
+		if err := ble.Scan(ctx1, true, fn, filter); err != nil {
+			if err != context.Canceled {
+				continue
+			}
+		}
+
+		fmt.Printf("Waiting for addr... \n")
+		address := (<-ch).Addr()
+		fmt.Printf("Addr obtained.. \n")
+		go startDial(ctx, address)
 	}
 
-	<-stopAdvertise
+	/*
+		for j := 0; j < MaxConnections; j++ {
+			fmt.Printf("Routine number: %d \n", j)
+			go peripheralConnect(filter)
+		}
+	*/
+
+	//<-stopAdvertise
+
+}
+
+func startDial(ctx context.Context, address ble.Addr) {
+	fmt.Printf("Starting a dialing... \n")
+	ctx2, cancel := context.WithCancel(ctx)
+	fmt.Printf("Starting a connection \n")
+	cln, err := ble.Dial(ctx2, address)
+
+	// Define a channel to intercept the end fo communication if its closed by the device
+	closedConnection := make(chan struct{})
+	go func() {
+		<-cln.Disconnected()
+		tagId := cln.Addr().String()
+		fmt.Printf("[ %s ] is disconnected \n", tagId)
+		storeState(tagId)
+		cancel()
+		close(closedConnection)
+	}()
+
+	fmt.Printf("Discovering profile...\n")
+	p, err := cln.DiscoverProfile(true)
+	if err != nil {
+		fmt.Printf("can't discover profile: %s \n", err)
+		close(closedConnection)
+	}
+
+	// Start the exploration.
+	exploreAndSubscribe(cln, p)
+
+	<-closedConnection
 
 }
 
@@ -262,7 +319,7 @@ func storeState(TagId string) {
 	ts, found := tagsState.Load(TagId)
 	if found {
 		fmt.Printf("Sending state %+v \n", ts)
-		sendStateToWebHook(ts.(*TagState))
+		//sendStateToWebHook(ts.(*TagState))
 	}
 }
 
@@ -270,7 +327,7 @@ func storeContacts(SplunkChannel chan StoredContact) {
 	for {
 		c := <-SplunkChannel
 		fmt.Printf("Sending contact %+v \n", c)
-		sendContactToWebHook(c)
+		//sendContactToWebHook(c)
 
 		// Not send too fast
 		//time.Sleep(100 * time.Millisecond)
@@ -293,13 +350,13 @@ func ConnectWithDuplicate(ctx context.Context, f ble.AdvFilter) (ble.Client, err
 		cancel()
 		ch <- a
 	}
-	fmt.Printf("Starting a connection \n")
+
 	if err := ble.Scan(ctx2, true, fn, f); err != nil {
 		if err != context.Canceled {
 			return nil, errors.Wrap(err, "can't scan")
 		}
 	}
-
+	fmt.Printf("Starting a connection \n")
 	cln, err := ble.Dial(ctx, (<-ch).Addr())
 	return cln, errors.Wrap(err, "can't dial")
 }
