@@ -25,12 +25,13 @@ var (
 	characteristicUuid = flag.String("cUuid", "87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb", "uiid to search for")
 	du                 = flag.Duration("du", 60*time.Second, "scanning duration")
 	sub                = flag.Duration("sub", 60*time.Second, "subscribe to notification and indication for a specified period")
-	serverAddr         = flag.String("server_addr", "localhost", "Address of the server with the data collector and other features")
-	argWebHook         = flag.String("send_web_hook", "https://webhook.site/f472fdde-ac7a-47c0-95c3-78827e527667", "Send contacts to a web hook")
+	serverAddr         = flag.String("server_addr", "192.168.0.153", "Address of the server with the data collector and other features")
+	argWebHook         = flag.String("send_web_hook", "https://192.168.0.153:8088/services/collector", "Send contacts to a web hook")
 	parametersUrl      = flag.String("param_url", ":8089/servicesNS/nobody/search/storage/collections/data/kvcollcontactstracing/PARAMETER", "Url used to recover parameters value")
 	argWebHookAPIKey   = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
 	argMaxConnections  = flag.Int("max_connections", 5, "Max number of parallel connections to tags")
+	argBearerToken     = flag.String("bearer_token", "", "Token to be used in the request for parameters")
 )
 
 var connectMuX sync.Mutex
@@ -42,6 +43,7 @@ func main() {
 	APIKey = *argWebHookAPIKey
 	APIValue = *argWebHookAPIValue
 	MaxConnections = *argMaxConnections
+	BearerToken = *argBearerToken
 
 	SplunkChannel = make(chan StoredContact, 5000)
 
@@ -77,10 +79,10 @@ func main() {
 
 //Start advertising
 func advertising(d ble.Device) {
-	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	for {
-		//TODO send an http request to retrieve parameters
-		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 60*5*time.Second))
+		readParamenters(b)
+		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 20*time.Second))
 		chkErr(d.AdvertiseMfgData(ctx, 555, b))
 	}
 }
