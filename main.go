@@ -25,19 +25,16 @@ var (
 	characteristicUuid = flag.String("cUuid", "87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb", "uiid to search for")
 	du                 = flag.Duration("du", 60*time.Second, "scanning duration")
 	sub                = flag.Duration("sub", 60*time.Second, "subscribe to notification and indication for a specified period")
-	serverAddr         = flag.String("server_addr", "localhost", "Address of the server with the data collector and other features")
-	argWebHook         = flag.String("send_web_hook", "https://webhook.site/f472fdde-ac7a-47c0-95c3-78827e527667", "Send contacts to a web hook")
+	serverAddr         = flag.String("server_addr", "192.168.0.153", "Address of the server with the data collector and other features")
+	argWebHook         = flag.String("send_web_hook", "https://192.168.0.153:8088/services/collector", "Send contacts to a web hook")
 	parametersUrl      = flag.String("param_url", ":8089/servicesNS/nobody/search/storage/collections/data/kvcollcontactstracing/PARAMETER", "Url used to recover parameters value")
 	argWebHookAPIKey   = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
 	argMaxConnections  = flag.Int("max_connections", 5, "Max number of parallel connections to tags")
+	argBearerToken     = flag.String("bearer_token", "", "Token to be used in the request for parameters")
 )
 
 var connectMuX sync.Mutex
-
-ctx := context.Background()
-
-dialChan := make(chan ble.Addr, 10)
 
 func main() {
 	flag.Parse()
@@ -46,6 +43,7 @@ func main() {
 	APIKey = *argWebHookAPIKey
 	APIValue = *argWebHookAPIValue
 	MaxConnections = *argMaxConnections
+	BearerToken = *argBearerToken
 
 	SplunkChannel = make(chan StoredContact, 5000)
 
@@ -53,7 +51,7 @@ func main() {
 
 	d, err := dev.NewDevice(*device)
 	if err != nil {
-		log.Fatalf("can't create new device : %s", err)
+		log.Fatalf("can't new device : %s", err)
 	}
 	ble.SetDefaultDevice(d)
 
@@ -61,7 +59,6 @@ func main() {
 	filter := func(a ble.Advertisement) bool {
 		for _, s := range a.Services() {
 			if s.Equal(ble.MustParse(*serviceUuid)) {
-				//fmt.Printf("Found the service %s for the device %s \n", s, a.Addr())
 				return true
 			}
 		}
@@ -71,10 +68,16 @@ func main() {
 	//stopAdvertise := make(chan struct{})
 	go advertising(d)
 
-	for j = 0; j < 6; j++ {
-		go manageDial(j)
-	}
-	
+	ctx := context.Background()
+
+	//dialChan := make(chan ble.Addr, 10)
+
+	/*
+		for j := 0; j < MaxConnections; j++ {
+			go manageDial(ctx, dialChan, j)
+		}
+	*/
+
 	for {
 		ctx1, cancel := context.WithCancel(ctx)
 
@@ -93,26 +96,28 @@ func main() {
 
 		fmt.Printf("Waiting for addr... \n")
 		address := (<-ch).Addr()
-		fmt.Printf("Addr obtained.. \n")
-		dialChan <- address
-		//go startDial(ctx, address)
+		fmt.Printf("Addr %s detected... \n", address)
+		//dialChan <- address
+		go startDial(ctx, address, 0)
 	}
 
+	//<-stopAdvertise
 }
 
-func manageDial(j int) {
+func manageDial(ctx context.Context, dialChan chan ble.Addr, j int) {
 	for {
-		address <- dialChan
-		fmt.Printf("Start dial number %d with tag %s \n", j, address)
-		startDial(ctx, address)
+		address := <-dialChan
+		fmt.Printf("Detected address %s \n", address)
+		startDial(ctx, address, j)
 	}
 }
 
-func startDial(ctx context.Context, address ble.Addr) {
-	fmt.Printf("Starting a dialing... \n")
+func startDial(ctx context.Context, address ble.Addr, dialId int) {
+
 	ctx2, cancel := context.WithCancel(ctx)
-	fmt.Printf("Starting a connection \n")
+
 	cln, err := ble.Dial(ctx2, address)
+	fmt.Printf("Start dial number %d with tag %s \n", dialId, address)
 
 	// Define a channel to intercept the end fo communication if its closed by the device
 	closedConnection := make(chan struct{})
@@ -141,9 +146,9 @@ func startDial(ctx context.Context, address ble.Addr) {
 
 //Start advertising
 func advertising(d ble.Device) {
-	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	for {
-		//TODO send an http request to retrieve parameters
+		readParamenters(b)
 		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 60*5*time.Second))
 		chkErr(d.AdvertiseMfgData(ctx, 555, b))
 	}
@@ -326,7 +331,7 @@ func storeState(TagId string) {
 	ts, found := tagsState.Load(TagId)
 	if found {
 		fmt.Printf("Sending state %+v \n", ts)
-		//sendStateToWebHook(ts.(*TagState))
+		sendStateToWebHook(ts.(*TagState))
 	}
 }
 
@@ -334,10 +339,7 @@ func storeContacts(SplunkChannel chan StoredContact) {
 	for {
 		c := <-SplunkChannel
 		fmt.Printf("Sending contact %+v \n", c)
-		//sendContactToWebHook(c)
-
-		// Not send too fast
-		//time.Sleep(100 * time.Millisecond)
+		sendContactToWebHook(c)
 	}
 }
 
@@ -357,7 +359,7 @@ func ConnectWithDuplicate(ctx context.Context, f ble.AdvFilter) (ble.Client, err
 		cancel()
 		ch <- a
 	}
-
+	fmt.Printf("Starting scanning \n")
 	if err := ble.Scan(ctx2, true, fn, f); err != nil {
 		if err != context.Canceled {
 			return nil, errors.Wrap(err, "can't scan")

@@ -28,12 +28,12 @@ var tagsState sync.Map
 
 // TagState - Last seen state of a tag
 type TagState struct {
-	TagID        string `json:"TagID"`
-	LastSeen     int64  `json:"LastSeen,omitempty"`
-	SyncTime     int64  `json:"SyncTime,omitempty"`
-	BatteryLevel int16  `json:"BatteryLevel,omitempty"`
-	TotalContact int16  `json:"TotalContact,omitempty"`
-	SyncContact  int16  `json:"SyncContact,omitempty"`
+	TagID        string `json:"ID"`
+	LastSeen     int64  `json:"LastSeenTS,omitempty"`
+	SyncTime     int64
+	BatteryLevel int16 `json:"BatteryLevel,omitempty"`
+	TotalContact int16 `json:"ToSync,omitempty"`
+	SyncContact  int16 `json:"Synced,omitempty"`
 }
 
 type ParameterPayload struct {
@@ -82,3 +82,6 @@ var StartedConnections int
 
 // StartedRoutines - Number of started parallel connection routines
 var StartedRoutines int
+
+// BearerToken - Token to be used in the request for parameters
+var BearerToken string
