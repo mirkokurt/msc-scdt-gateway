@@ -35,6 +35,10 @@ var (
 
 var connectMuX sync.Mutex
 
+ctx := context.Background()
+
+dialChan := make(chan ble.Addr, 10)
+
 func main() {
 	flag.Parse()
 
@@ -67,7 +71,10 @@ func main() {
 	//stopAdvertise := make(chan struct{})
 	go advertising(d)
 
-	ctx := context.Background()
+	for j = 0; j < 6; j++ {
+		go manageDial(j)
+	}
+	
 	for {
 		ctx1, cancel := context.WithCancel(ctx)
 
@@ -87,18 +94,18 @@ func main() {
 		fmt.Printf("Waiting for addr... \n")
 		address := (<-ch).Addr()
 		fmt.Printf("Addr obtained.. \n")
-		go startDial(ctx, address)
+		dialChan <- address
+		//go startDial(ctx, address)
 	}
 
-	/*
-		for j := 0; j < MaxConnections; j++ {
-			fmt.Printf("Routine number: %d \n", j)
-			go peripheralConnect(filter)
-		}
-	*/
+}
 
-	//<-stopAdvertise
-
+func manageDial(j int) {
+	for {
+		address <- dialChan
+		fmt.Printf("Start dial number %d with tag %s \n", j, address)
+		startDial(ctx, address)
+	}
 }
 
 func startDial(ctx context.Context, address ble.Addr) {
