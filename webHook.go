@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 )
 
 // The function send the contact to a web hook
@@ -59,5 +60,18 @@ func sendStateToWebHook(state *TagState) {
 	_, err = http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending the contact to the web hook, %v", err)
+		fmt.Printf("Writing in the file\n")
+		fileMuX.Lock()
+		f, err := os.OpenFile("logfile", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+		check(err)
+		defer f.Close()
+		n3, err := f.WriteString(fmt.Sprintf("%s\n", jsonContact))
+		if err != nil {
+			fmt.Printf("Error writing in the file %s\n", err)
+		}
+		fmt.Printf("wrote %d bytes\n", n3)
+
+		f.Sync()
+		fileMuX.Unlock()
 	}
 }

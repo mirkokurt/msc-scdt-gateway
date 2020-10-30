@@ -35,6 +35,7 @@ var (
 )
 
 var connectMuX sync.Mutex
+var fileMuX sync.Mutex
 
 func main() {
 	flag.Parse()
@@ -44,6 +45,17 @@ func main() {
 	APIValue = *argWebHookAPIValue
 	MaxConnections = *argMaxConnections
 	BearerToken = *argBearerToken
+
+	if !FileExists("logfile") {
+		CreateFile("logfile")
+	}
+
+	//file, err := os.Create("logfile")
+	//check(err)
+	//defer file.Close()
+
+	//log.SetOutput(f)
+	//log.Println("This is a test log entry")
 
 	SplunkChannel = make(chan StoredContact, 5000)
 
@@ -69,7 +81,7 @@ func main() {
 	go advertising(d)
 
 	for j := 0; j < MaxConnections; j++ {
-		fmt.Printf("Routine number: %d \n", j)
+		//fmt.Printf("Routine number: %d \n", j)
 		go peripheralConnect(filter)
 	}
 
@@ -82,7 +94,7 @@ func advertising(d ble.Device) {
 	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	for {
 		readParamenters(b)
-		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 20*time.Second))
+		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 60*5*time.Second))
 		chkErr(d.AdvertiseMfgData(ctx, 555, b))
 	}
 }
@@ -295,13 +307,19 @@ func ConnectWithDuplicate(ctx context.Context, f ble.AdvFilter) (ble.Client, err
 		cancel()
 		ch <- a
 	}
-	fmt.Printf("Starting a connection \n")
+	fmt.Printf("Starting scanning \n")
 	if err := ble.Scan(ctx2, true, fn, f); err != nil {
 		if err != context.Canceled {
 			return nil, errors.Wrap(err, "can't scan")
 		}
 	}
-
+	fmt.Printf("Starting a connection \n")
 	cln, err := ble.Dial(ctx, (<-ch).Addr())
 	return cln, errors.Wrap(err, "can't dial")
+}
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
 }
