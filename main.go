@@ -91,7 +91,7 @@ func main() {
 
 //Start advertising
 func advertising(d ble.Device) {
-	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 	for {
 		readParamenters(b)
 		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 60*5*time.Second))
