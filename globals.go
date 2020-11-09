@@ -69,7 +69,7 @@ var APIKey string
 // APIValue - Set the value to be used in the API key authorization
 var APIValue string
 
-// splunkChannel - Channel to be shared between routines in order to store contacts
+// SplunkChannel - Channel to be shared between routines in order to store contacts
 var SplunkChannel chan StoredContact
 
 // SplunkAddress - Ip address of the Splunk server

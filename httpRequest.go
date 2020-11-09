@@ -33,6 +33,7 @@ func readParamenters(b []byte) {
 		}
 		var payload ParameterPayload
 		json.Unmarshal(body, &payload)
+		b[0] = byte(160)
 		b[1] = byte(payload.VERSION)
 		b[2] = byte(payload.DISTANCE_THR_PARAM)
 		b[3] = byte(payload.DURATION_THR_PARAM)
