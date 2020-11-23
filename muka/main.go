@@ -2,6 +2,9 @@ package main
 
 import (
 	"os"
+	"time"
+	"fmt"
+	"strings"
 
     "github.com/godbus/dbus"
 	"github.com/muka/go-bluetooth/hw"
@@ -70,7 +73,8 @@ func main()  {
 	log.Infof("Flush device")
 	
 	filter := adapter.NewDiscoveryFilter()
-	//filter.UUIDs = append(filter.UUIDs, "00001801-0000-1000-8000-00805f9b34fb")
+	//filter.AddUUIDs("0000fd6f-0000-1000-8000-00805f9b34fc")
+	filter.AddUUIDs("6e0e5437-0c82-4a6c-8c6b-503fad255e03")
 	filter.DuplicateData = true
 
 
@@ -87,7 +91,6 @@ func main()  {
 	
 	go func() {
 		for ev := range discovery {
-			log.Infof("Found ev %v\n", ev)
 			dev, err := device.NewDevice1(ev.Path)
 			if err != nil {
 				return 
@@ -104,11 +107,95 @@ func main()  {
 				n = p.Name
 			}
 			log.Infof("Discovered (%s) %s", n, p.Address)
+			
+			err = connect(dev, ag, adapterID)
+			if err != nil {
+				return
+			}
+			
+			log.Info("Listing exposed services")
+			retrieveServices(a, dev)
+			
+			/*
+			watchProps, err := dev.WatchProperties()
+			if err != nil {
+				return
+			}
+			log.Infof(">>>>>>>>>>>>>>>>>> Start watch properties !")
+			go func() {
+				for propUpdate := range watchProps {
+					log.Debugf("--> updated %s=%v", propUpdate.Name, propUpdate.Value)
+				}
+			}()
+			*/
 		}
 	}()
 	
 	<-end
 	log.Infof("End of the program ")
 	// return
+}
+
+func retrieveServices(a *adapter.Adapter1, dev *device.Device1) error {
+
+	log.Info("Listing exposed services")
+
+	list, err := dev.GetAllServicesAndUUID()
+	if err != nil {
+		return err
+	}
+	
+	log.Info("Result \n", list)
+
+	if len(list) == 0 {
+		time.Sleep(time.Second * 2)
+		
+		return retrieveServices(a, dev)
+	}
+
+	for _, servicePath := range list {
+		log.Info("%s", servicePath)
+	}
+
+	return nil
+}
+
+func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error {
+
+	props, err := dev.GetProperties()
+	if err != nil {
+		return fmt.Errorf("Failed to load props: %s", err)
+	}
+
+	log.Infof("Found device name=%s addr=%s rssi=%d", props.Name, props.Address, props.RSSI)
+
+	if props.Connected {
+		log.Info("Device is connected")
+		return nil
+	}
+
+	if !props.Paired || !props.Trusted {
+		log.Info("Pairing device")
+
+		err := dev.Pair()
+		if err != nil {
+			return fmt.Errorf("Pair failed: %s", err)
+		}
+
+		log.Info("Pair succeed, connecting...")
+		agent.SetTrusted(adapterID, dev.Path())
+	}
+
+	if !props.Connected {
+		log.Info("Connecting device")
+		err = dev.Connect()
+		if err != nil {
+			if !strings.Contains(err.Error(), "Connection refused") {
+				return fmt.Errorf("Connect failed: %s", err)
+			}
+		}
+	}
+
+	return nil
 }
 	
