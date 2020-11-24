@@ -12,11 +12,13 @@ import (
 	"github.com/muka/go-bluetooth/bluez/profile/adapter"
 	"github.com/muka/go-bluetooth/bluez/profile/agent"
 	"github.com/muka/go-bluetooth/bluez/profile/device"
-	//"github.com/muka/go-bluetooth/bluez/profile/advertising"
+	"github.com/muka/go-bluetooth/bluez/profile/advertising"
 	//"github.com/muka/go-bluetooth/api/service"
 	//"github.com/muka/go-bluetooth/bluez/profile/gatt"
 	log "github.com/sirupsen/logrus"
 )
+
+var end = make(chan struct{})
 
 func main()  {
 
@@ -35,9 +37,8 @@ func main()  {
 	btmgmt.SetPowered(false)
 	btmgmt.SetLe(true)
 	btmgmt.SetBredr(false)
+	btmgmt.SetConnectable(false)
 	btmgmt.SetPowered(true)
-	
-	end := make(chan struct{})
 	
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Set Authentication
@@ -131,6 +132,9 @@ func main()  {
 		}
 	}()
 	
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Start Advertising
+	go startAdvertising(adapterID)
+	
 	<-end
 	log.Infof("End of the program ")
 	// return
@@ -198,4 +202,39 @@ func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error
 
 	return nil
 }
+
+func startAdvertising(adapterID string) {
+
+	var prop *advertising.LEAdvertisement1Properties
+	prop = new(advertising.LEAdvertisement1Properties)
+	prop.Appearance = 512
+	prop.Discoverable = false
+	prop.DiscoverableTimeout = 0
+	prop.Duration = 1
+	
+	prop.LocalName = "ContactsGateway"
+
+	b := []uint8{1, 2, 3, 4, 5, 6, 7}
+	prop.AddManifacturerData(555, b)
+	
+	prop.Timeout = 300
+	prop.Type = "broadcast"
+	
+	log.Infof("Prop is \n", prop)
+	
+	//interf, _ := prop.ToMap()
+	
+	//log.Infof("Interf is %v\n", interf)
+	
+	cancelAdv, err := api.ExposeAdvertisement(adapterID, prop, 0)
+	if err != nil {
+		log.Infof("Error is %v\n", err)
+		return
+	}
+	defer cancelAdv()
+	<-end
+	
+	log.Infof("End Advertising")
+}
+
 	
