@@ -37,7 +37,6 @@ type TagState struct {
 }
 
 type ParameterPayload struct {
-	VERSION                        int8  `json:"VERSION"`
 	DISTANCE_THR_PARAM             int8  `json:"DISTANCE_THR_PARAM"`
 	DURATION_THR_PARAM             int8  `json:"DURATION_THR_PARAM"`
 	TX_RATE_PARAM                  int8  `json:"TX_RATE_PARAM"`
@@ -69,7 +68,7 @@ var APIKey string
 // APIValue - Set the value to be used in the API key authorization
 var APIValue string
 
-// SplunkChannel - Channel to be shared between routines in order to store contacts
+// splunkChannel - Channel to be shared between routines in order to store contacts
 var SplunkChannel chan StoredContact
 
 // SplunkAddress - Ip address of the Splunk server
