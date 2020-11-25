@@ -1,16 +1,12 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	"log"
 	"time"
 	"strconv"
 	"os/exec"
-    "runtime"
-
-	//"strings"
+	"strings"
 	"encoding/binary"
 	"encoding/hex"
 	"sync"
@@ -21,11 +17,10 @@ import (
 	"github.com/muka/go-bluetooth/bluez/profile/adapter"
 	"github.com/muka/go-bluetooth/bluez/profile/agent"
 	"github.com/muka/go-bluetooth/bluez/profile/device"
-	"github.com/muka/go-bluetooth/bluez/profile/advertising"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
-	device = flag.String("device", "default", "implementation of ble")
 	name   = flag.String("name", "LED", "name of remote peripheral")
 	//uuid   = flag.String("uuid", "19b10000e8f2537e4f6cd104768a1214", "uiid to search for")
 	serviceUuid        = flag.String("sUuid", "6e0e5437-0c82-4a6c-8c6b-503fad255e03", "uiid to search for")
@@ -106,7 +101,7 @@ func main() {
 	go storeContacts(SplunkChannel)
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Start advertising
-	go advertising()
+	go advertisingRoutine()
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Discover devices
 	log.Infof("Discovering on %s", adapterID)
@@ -140,22 +135,24 @@ func main() {
 	defer cancel()	
 
 	for ev := range discovery {
-		go connect(ev)
+	
+		dev, err := device.NewDevice1(ev.Path)
+		if err != nil {
+			log.Infof("Error is %v\n", err)
+			return 
+		}
+		
+		if dev == nil || dev.Properties == nil {
+			continue
+		}
+		
+		// Start a routine to create the connection and subscribe to contact characteristic
+		go connectToDevice(dev, ag, adapterID)
 	}
 
 }
 
-func connect (ev dbus.ObjectPath){
-
-	dev, err := device.NewDevice1(ev.Path)
-	if err != nil {
-		log.Infof("Error is %v\n", err)
-		return 
-	}
-	
-	if dev == nil || dev.Properties == nil {
-		continue
-	}
+func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID string){
 
 	p := dev.Properties
 
@@ -165,7 +162,7 @@ func connect (ev dbus.ObjectPath){
 	}
 	log.Infof("Discovered (%s) %s", n, p.Address)
 	
-	err = connect(dev, ag, adapterID)
+	err := connect(dev, ag, adapterID)
 	if err != nil {
 		log.Infof("Error is %v\n", err)
 		return
@@ -192,7 +189,7 @@ func connect (ev dbus.ObjectPath){
 	}
 	
 	go func() {
-		id1 := dev.GetAddress()
+		id1,_ := dev.GetAddress()
 		prec := time.Now().UnixNano()
 		
 		for propUpdate := range watchProps {
@@ -213,8 +210,46 @@ func connect (ev dbus.ObjectPath){
 	<-end
 }
 
-//Advertisign routine
-func advertising() {
+func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error {
+
+	props, err := dev.GetProperties()
+	if err != nil {
+		return fmt.Errorf("Failed to load props: %s", err)
+	}
+
+	log.Infof("Found device name=%s addr=%s rssi=%d", props.Name, props.Address, props.RSSI)
+
+	if props.Connected {
+		log.Info("Device is connected")
+		return nil
+	}
+
+	if !props.Paired || !props.Trusted {
+		log.Info("Pairing device")
+
+		err := dev.Pair()
+		if err != nil {
+			return fmt.Errorf("Pair failed: %s", err)
+		}
+
+		log.Info("Pair succeed, connecting...")
+		agent.SetTrusted(adapterID, dev.Path())
+	}
+
+	if !props.Connected {
+		log.Info("Connecting device")
+		err = dev.Connect()
+		if err != nil {
+			if !strings.Contains(err.Error(), "Connection refused") {
+				return fmt.Errorf("Connect failed: %s", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func advertisingRoutine() {
 
 	ticker := time.NewTicker(5 * time.Second)
 	for range ticker.C {
@@ -320,17 +355,17 @@ func storeContacts(SplunkChannel chan StoredContact) {
 func advertise() {
 	strconv.FormatInt(255, 16)
 	
-    out, err := exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "18", "17", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]).Output()
+    _, err := exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "18", "17", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]).Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
 	
-    out, err = exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "A0", "00", "B0", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
+    _, err = exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "A0", "00", "B0", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
 	
-	out, err = exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
+	_, err = exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
     if err != nil {
         fmt.Printf("%s", err)
     }

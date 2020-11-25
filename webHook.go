@@ -75,3 +75,9 @@ func sendStateToWebHook(state *TagState) {
 		fileMuX.Unlock()
 	}
 }
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
