@@ -169,7 +169,10 @@ func main()  {
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Start Advertising
 	//go startAdvertising(adapterID)
 	
-	sendCommand()
+	ticker := time.NewTicker(5 * time.Second)
+	for range ticker.C {
+		sendCommand()
+	}	
 	
 	<-end
 	log.Infof("End of the program ")
