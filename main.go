@@ -89,7 +89,7 @@ func main() {
 	}
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Init parameters to be sent to Tags
-	//b = ["00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00"]
+	b = []string{"00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00"}
 
 	// Create file if it not exists
 	if !FileExists("logfile") {
@@ -251,17 +251,25 @@ func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error
 
 func advertisingRoutine() {
 
+	// Update parameter from Splunk
+	go updateParameters()
+
 	ticker := time.NewTicker(5 * time.Second)
 	for range ticker.C {
 		advertise()
 	}	
+}
 
-	for {
-		// Update parameter from Splunk
+func updateParameters() {
+	// Update parameters for the first time
+	readParamenters(b)
+	
+	// Update parameters periodically
+	ticker := time.NewTicker(300 * time.Second)
+	for range ticker.C {	
 		readParamenters(b)
 	}
 }
-
 
 func formatContact(id1 string, b []byte) {
 
@@ -301,7 +309,14 @@ func formatContact(id1 string, b []byte) {
 		startTs := int64(binary.LittleEndian.Uint32(b[6:10]))
 		duration := int16(binary.LittleEndian.Uint16(b[10:12]))
 		avgRSSI := int8(b[12])
-		room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
+		
+		zoneID := binary.LittleEndian.Uint16(b[13:15])
+		room := ""
+		// ignore if 0xBFFF
+		if zoneID != 49151 {
+			room = "Zone" + string(zoneID)
+		} 
+		//room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
 
 		adjustedTs := nowTimestamp()
 		ts, found := tagsState.Load(id1)
