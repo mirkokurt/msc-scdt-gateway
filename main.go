@@ -74,7 +74,7 @@ func main() {
 	//Connect DBus System bus
 	conn, err := dbus.SystemBus()
 	if err != nil {
-		log.Infof("Error6 is %v\n", err)
+		log.Infof("Error is %v\n", err)
 		return
 	}
 
@@ -82,7 +82,7 @@ func main() {
 	ag.SetPassKey(123456)
 	err = agent.ExposeAgent(conn, ag, agent.CapKeyboardOnly, true)
 	if err != nil {
-		log.Infof("Error7 is %v\n", err)
+		log.Infof("Error is %v\n", err)
 		return
 	}
 	
@@ -106,13 +106,14 @@ func main() {
 
 	a, err := adapter.NewAdapter1FromAdapterID(adapterID)
 	if err != nil {
-		log.Infof("Error8 is %v\n", err)
+		log.Infof("Error is %v\n", err)
 		return
 	}
 	log.Infof("Adapter created")
 	
-	// Removes devices from the cache periodically
-	go cleanDeviceCacheRoutine(a)
+	// Removes devices from the cache
+	//go cleanDeviceCacheRoutine(a)
+	flushDevices(a)
 	
 	filter := adapter.NewDiscoveryFilter()
 	
@@ -122,17 +123,16 @@ func main() {
 
 	discovery, cancel, err := api.Discover(a, &filter)
 	if err != nil {
-		log.Infof("Error9 is %v\n", err)
+		log.Infof("Error is %v\n", err)
 		return
 	}
-	//enableDuplicates()
 	defer cancel()	
 
 	for ev := range discovery {
 	
 		dev, err := device.NewDevice1(ev.Path)
 		if err != nil {
-			log.Infof("Error10 is %v\n", err)
+			log.Infof("Scan error is %v\n", err)
 			continue 
 		}
 		
@@ -141,18 +141,9 @@ func main() {
 		}
 		
 		// Start a routine to create the connection and subscribe to contact characteristic
-		go connectToDevice(dev, ag, adapterID)
+		go connectToDevice(dev, ag, a, adapterID)
 	}
 
-}
-
-// A routine that periodically remove devices from the cache
-func cleanDeviceCacheRoutine(a *adapter.Adapter1) {
-	flushDevices(a)
-	ticker := time.NewTicker(10 * time.Second)
-	for range ticker.C {	
-		flushDevices(a)
-	}
 }
 
 func flushDevices(a *adapter.Adapter1) {
@@ -164,7 +155,7 @@ func flushDevices(a *adapter.Adapter1) {
 	log.Infof("Flush device")
 }
 
-func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID string){
+func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adapter1, adapterID string){
 
 	p := dev.Properties
 
@@ -176,19 +167,19 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID strin
 	
 	err := connect(dev, ag, adapterID)
 	if err != nil {
-		log.Infof("Error2 is %v\n", err)
+		log.Infof("Error is %v\n", err)
 		return
 	}
 	
 	charact, err := dev.GetCharByUUID("87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb")
 	if err != nil {
-		log.Infof("Error3 is %v\n", err)
+		log.Infof("Error is %v\n", err)
 		return
 	}
 		
 	err = charact.StartNotify()
 	if err != nil {
-		log.Infof("Error4 is %v\n", err)
+		log.Infof("Error is %v\n", err)
 		return
 	}
 		
@@ -196,9 +187,11 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID strin
 	log.Infof("Subscribe to characteristic")
 	watchProps, err := charact.WatchProperties()
 	if err != nil {
-		log.Infof("Error5 is %v\n", err)
+		log.Infof("Error is %v\n", err)
 		return
 	}
+	
+	dataReceived := false
 	
 	go func() {
 		log.Infof("Device address is %s", p.Address)
@@ -210,10 +203,12 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID strin
 			if propUpdate.Name == "Value" {
 				log.Debugf("--> updated %s=%v", propUpdate.Name, propUpdate.Value)
 				
+				// Signal that a data has been received
+				dataReceived = true
+				
 				// Calculate and print the passed time
 				diff := time.Now().UnixNano() - prec
-				fmt.Print("Diff is: ")
-				fmt.Println(diff)
+				log.Trace("Diff is: ", diff)
 				prec = time.Now().UnixNano()
 				
 				// Format and send the contact to Splunk
@@ -222,36 +217,23 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID strin
 		}
 	}()
 	
-	/*
+	// Check every 5 seconds if at lest one data record has been receive, if not disconnect
 	for {
-		connected, err := dev.GetConnected()
-		if err!=nil {
-			continue
-		}
-		if !connected {
+		time.Sleep(5 * time.Second)
+		if dataReceived == false {
 			break
 		}
-		fmt.Print("Still connected\n")
-		time.Sleep(1 * time.Second)
-	}
-	*/
-	
-	/*
-	for {
-		props, err := dev.GetProperties()
-		if err != nil && !props.Connected {
-			log.Info("Device is disconnected")
-			break
-		}
-	}*/
-	
-	
-	for {
-		time.Sleep(10 * time.Second)
+		dataReceived = false
 	}
 	
-	fmt.Print("Disconnecting\n")
+	storeState(p.Address)
+	
+	log.Trace("Disconnecting from ", p.Address)
 	dev.Disconnect()
+	
+	// Remove this device from the cache for reconnection
+	log.Trace("Removing from cache ", dev.Path())
+	a.RemoveDevice(dev.Path())
 	
 }
 
@@ -428,26 +410,6 @@ func advertise() {
     if err != nil {
         fmt.Printf("%s", err)
     }
-
-}
-
-func enableDuplicates() {
-	
-    out, err := exec.Command("sudo", "hcitool", "cmd", "0x08", "0x000C", "0x00", "0x00").Output()
-    if err != nil {
-        fmt.Printf("%s", err)
-    }
-	output := string(out[:])
-    fmt.Println(output)
-	
-	
-   out, err = exec.Command("sudo", "hcitool", "cmd", "0x08", "0x000C", "0x01", "0x00").Output()
-    if err != nil {
-        fmt.Printf("%s", err)
-    }
-	output = string(out[:])
-    fmt.Println(output)
-	
 
 }
 
