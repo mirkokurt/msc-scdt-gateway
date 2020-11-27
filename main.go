@@ -419,7 +419,7 @@ func advertise() {
         fmt.Printf("%s", err)
     }
 	
-    _, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "90", "00", "90", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
+    _, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "90", "00", "90", "00", "06", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
