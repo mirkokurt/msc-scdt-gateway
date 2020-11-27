@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"time"
-	"strconv"
 	"os/exec"
 	"strings"
 	"encoding/binary"
@@ -29,7 +28,7 @@ var (
 	sub                = flag.Duration("sub", 60*time.Second, "subscribe to notification and indication for a specified period")
 	serverAddr         = flag.String("server_addr", "192.168.0.153", "Address of the server with the data collector and other features")
 	argWebHook         = flag.String("send_web_hook", "https://192.168.0.153:8088/services/collector", "Send contacts to a web hook")
-	parametersUrl      = flag.String("param_url", ":8089/servicesNS/nobody/search/storage/collections/data/kvcollcontactstracing/PARAMETER", "Url used to recover parameters value")
+	parametersUrl      = flag.String("param_url", ":8089/servicesNS/nobody/search/storage/collections/data/kvcollcontactstracing/TAG_PARAMETER", "Url used to recover parameters value")
 	argWebHookAPIKey   = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
 	argMaxConnections  = flag.Int("max_connections", 5, "Max number of parallel connections to tags")
@@ -63,7 +62,7 @@ func main() {
 	// set LE mode
 	btmgmt.SetPowered(false)
 	btmgmt.SetLe(true)
-	btmgmt.SetBredr(false)
+	//btmgmt.SetBredr(false)
 	btmgmt.SetConnectable(false)
 	btmgmt.SetPowered(true)
 	
@@ -75,16 +74,15 @@ func main() {
 	//Connect DBus System bus
 	conn, err := dbus.SystemBus()
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error6 is %v\n", err)
 		return
 	}
 
 	ag := agent.NewSimpleAgent()
 	ag.SetPassKey(123456)
-	//err = agent.ExposeAgent(conn, ag, agent.CapNoInputNoOutput, true)
 	err = agent.ExposeAgent(conn, ag, agent.CapKeyboardOnly, true)
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error7 is %v\n", err)
 		return
 	}
 	
@@ -108,38 +106,34 @@ func main() {
 
 	a, err := adapter.NewAdapter1FromAdapterID(adapterID)
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error8 is %v\n", err)
 		return
 	}
 	log.Infof("Adapter created")
 	
-	err = a.FlushDevices()
-	if err != nil {
-		log.Infof("Error is %v\n", err)
-		return 
-	}
-	log.Infof("Flush device")
+	// Removes devices from the cache periodically
+	go cleanDeviceCacheRoutine(a)
 	
 	filter := adapter.NewDiscoveryFilter()
 	
 	// Search for a specific service
 	filter.AddUUIDs("6e0e5437-0c82-4a6c-8c6b-503fad255e03")
-	filter.DuplicateData = true
+	filter.DuplicateData = false
 
 	discovery, cancel, err := api.Discover(a, &filter)
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error9 is %v\n", err)
 		return
 	}
-
+	//enableDuplicates()
 	defer cancel()	
 
 	for ev := range discovery {
 	
 		dev, err := device.NewDevice1(ev.Path)
 		if err != nil {
-			log.Infof("Error is %v\n", err)
-			return 
+			log.Infof("Error10 is %v\n", err)
+			continue 
 		}
 		
 		if dev == nil || dev.Properties == nil {
@@ -150,6 +144,24 @@ func main() {
 		go connectToDevice(dev, ag, adapterID)
 	}
 
+}
+
+// A routine that periodically remove devices from the cache
+func cleanDeviceCacheRoutine(a *adapter.Adapter1) {
+	flushDevices(a)
+	ticker := time.NewTicker(10 * time.Second)
+	for range ticker.C {	
+		flushDevices(a)
+	}
+}
+
+func flushDevices(a *adapter.Adapter1) {
+	err := a.FlushDevices()
+	if err != nil {
+		//log.Infof("Error1 is %v\n", err)
+		//return 
+	}
+	log.Infof("Flush device")
 }
 
 func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID string){
@@ -164,19 +176,19 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID strin
 	
 	err := connect(dev, ag, adapterID)
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error2 is %v\n", err)
 		return
 	}
 	
 	charact, err := dev.GetCharByUUID("87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb")
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error3 is %v\n", err)
 		return
 	}
 		
 	err = charact.StartNotify()
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error4 is %v\n", err)
 		return
 	}
 		
@@ -184,30 +196,63 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, adapterID strin
 	log.Infof("Subscribe to characteristic")
 	watchProps, err := charact.WatchProperties()
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error5 is %v\n", err)
 		return
 	}
 	
 	go func() {
-		id1,_ := dev.GetAddress()
+		log.Infof("Device address is %s", p.Address)
+		id1 := p.Address
 		prec := time.Now().UnixNano()
 		
 		for propUpdate := range watchProps {
-		
-			log.Debugf("--> updated %s=%v", propUpdate.Name, propUpdate.Value)
 			
-			// Calculate and print the passed time
-			diff := time.Now().UnixNano() - prec
-			fmt.Print("Diff is: ")
-			fmt.Println(diff)
-			prec = time.Now().UnixNano()
-			
-			// Format and send the contact to Splunk
-			formatContact(id1, propUpdate.Value.([]byte))
+			if propUpdate.Name == "Value" {
+				log.Debugf("--> updated %s=%v", propUpdate.Name, propUpdate.Value)
+				
+				// Calculate and print the passed time
+				diff := time.Now().UnixNano() - prec
+				fmt.Print("Diff is: ")
+				fmt.Println(diff)
+				prec = time.Now().UnixNano()
+				
+				// Format and send the contact to Splunk
+				formatContact(id1, propUpdate.Value.([]byte))
+			}
 		}
 	}()
 	
-	<-end
+	/*
+	for {
+		connected, err := dev.GetConnected()
+		if err!=nil {
+			continue
+		}
+		if !connected {
+			break
+		}
+		fmt.Print("Still connected\n")
+		time.Sleep(1 * time.Second)
+	}
+	*/
+	
+	/*
+	for {
+		props, err := dev.GetProperties()
+		if err != nil && !props.Connected {
+			log.Info("Device is disconnected")
+			break
+		}
+	}*/
+	
+	
+	for {
+		time.Sleep(10 * time.Second)
+	}
+	
+	fmt.Print("Disconnecting\n")
+	dev.Disconnect()
+	
 }
 
 func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error {
@@ -233,7 +278,7 @@ func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error
 		}
 
 		log.Info("Pair succeed, connecting...")
-		agent.SetTrusted(adapterID, dev.Path())
+		//agent.SetTrusted(adapterID, dev.Path())
 	}
 
 	if !props.Connected {
@@ -311,6 +356,7 @@ func formatContact(id1 string, b []byte) {
 		avgRSSI := int8(b[12])
 		
 		zoneID := binary.LittleEndian.Uint16(b[13:15])
+		//fmt.Println("ZoneID is : ", zoneID)
 		room := ""
 		// ignore if 0xBFFF
 		if zoneID != 49151 {
@@ -366,23 +412,68 @@ func storeContacts(SplunkChannel chan StoredContact) {
 	}
 }
 
-
 func advertise() {
-	strconv.FormatInt(255, 16)
-	
-    _, err := exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "18", "17", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]).Output()
+
+    _, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "18", "17", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]).Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
 	
-    _, err = exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "A0", "00", "B0", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
+    _, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "90", "00", "90", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
 	
-	_, err = exec.Command("hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
+	_, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
 
 }
+
+func enableDuplicates() {
+	
+    out, err := exec.Command("sudo", "hcitool", "cmd", "0x08", "0x000C", "0x00", "0x00").Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
+	output := string(out[:])
+    fmt.Println(output)
+	
+	
+   out, err = exec.Command("sudo", "hcitool", "cmd", "0x08", "0x000C", "0x01", "0x00").Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
+	output = string(out[:])
+    fmt.Println(output)
+	
+
+}
+
+/*
+func advertise() {
+	
+    out, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "18", "17", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]).Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
+	output := string(out[:])
+    fmt.Println(output)
+	
+    out, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "90", "00", "90", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
+	output = string(out[:])
+    fmt.Println(output)
+	
+	out, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
+	output = string(out[:])
+    fmt.Println(output)
+
+}
+*/
