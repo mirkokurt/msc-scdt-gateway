@@ -21,7 +21,6 @@ import (
 
 var (
 	name   = flag.String("name", "LED", "name of remote peripheral")
-	//uuid   = flag.String("uuid", "19b10000e8f2537e4f6cd104768a1214", "uiid to search for")
 	serviceUuid        = flag.String("sUuid", "6e0e5437-0c82-4a6c-8c6b-503fad255e03", "uiid to search for")
 	characteristicUuid = flag.String("cUuid", "87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb", "uiid to search for")
 	du                 = flag.Duration("du", 60*time.Second, "scanning duration")
@@ -33,6 +32,7 @@ var (
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
 	argMaxConnections  = flag.Int("max_connections", 5, "Max number of parallel connections to tags")
 	argBearerToken     = flag.String("bearer_token", "", "Token to be used in the request for parameters")
+	argGatewayMode     = flag.String("gateway_mode", "internal", "Gateway operational mode (internal/external)")
 )
 
 var connectMuX sync.Mutex
@@ -52,6 +52,7 @@ func main() {
 	APIValue = *argWebHookAPIValue
 	MaxConnections = *argMaxConnections
 	BearerToken = *argBearerToken
+	GatewayMode=*argGatewayMode
 	
 	adapterID := "hci0"
 	
@@ -87,9 +88,9 @@ func main() {
 	}
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Init parameters to be sent to Tags
-	b = []string{"00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00"}
+	b = []string{"00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00"}
 
-	// Create file if it not exists
+	// Create backup file if it not exists
 	if !FileExists("logfile") {
 		CreateFile("logfile")
 	}
@@ -132,7 +133,7 @@ func main() {
 	
 		dev, err := device.NewDevice1(ev.Path)
 		if err != nil {
-			log.Infof("Scan error is %v\n", err)
+			//log.Infof("Scan error is %v\n", err)
 			continue 
 		}
 		
@@ -253,11 +254,16 @@ func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error
 
 	if !props.Paired || !props.Trusted {
 		log.Info("Pairing device")
-
+		
+		pairTime := time.Now().UnixNano()
+				
 		err := dev.Pair()
 		if err != nil {
 			return fmt.Errorf("Pair failed: %s", err)
 		}
+		
+		pairTime = time.Now().UnixNano() - pairTime
+		log.Trace("Pair time is: ", pairTime)
 
 		log.Info("Pair succeed, connecting...")
 		//agent.SetTrusted(adapterID, dev.Path())
@@ -280,6 +286,8 @@ func advertisingRoutine() {
 
 	// Update parameter from Splunk
 	go updateParameters()
+	
+	
 
 	ticker := time.NewTicker(5 * time.Second)
 	for range ticker.C {
@@ -305,10 +313,22 @@ func formatContact(id1 string, b []byte) {
 	// if id2 = 0, this is a state message
 	// payload example { 0, 0, 0, 0, 0, 0, syncTS, syncTS, syncTS, syncTS, totalContact, totalContact, batteryLevel, batteryLevel }
 	if id2_check == 0 {
-		fmt.Printf("Arra is % X:", b)
+		fmt.Printf("Array is % X:", b)
 		syncTS := int64(binary.LittleEndian.Uint32(b[6:10]))
 		totalContact := int16(binary.LittleEndian.Uint16(b[10:12]))
 		batteryLevel := int16(binary.LittleEndian.Uint16(b[12:14]))
+		opMode := uint8((b[14] & 192) >> 6)
+		fmt.Printf(">>>>>>>>>>>>>>>>>>>>>>>> OpMode is ", opMode)
+		opModeString := ""
+		switch opMode {
+			case 1:
+				opModeString = "Client"
+			case 2:
+				opModeString = "Worker"
+			default:
+				opModeString = ""
+		}
+		paramVersion := int8(b[14] & 63)
 
 		ts, found := tagsState.Load(id1)
 		if found {
@@ -317,6 +337,8 @@ func formatContact(id1 string, b []byte) {
 			ts.(*TagState).TotalContact = totalContact
 			ts.(*TagState).SyncContact = 0
 			ts.(*TagState).BatteryLevel = batteryLevel
+			ts.(*TagState).OpMode = opModeString
+			ts.(*TagState).ParamVersion = paramVersion
 		} else {
 			var its TagState
 			its.TagID = id1
@@ -325,6 +347,8 @@ func formatContact(id1 string, b []byte) {
 			its.TotalContact = totalContact
 			its.SyncContact = 0
 			its.BatteryLevel = batteryLevel
+			its.OpMode = opModeString
+			its.ParamVersion = paramVersion
 			tagsState.Store(id1, &its)
 		}
 
@@ -342,7 +366,7 @@ func formatContact(id1 string, b []byte) {
 		room := ""
 		// ignore if 0xBFFF
 		if zoneID != 49151 {
-			room = "Zone" + string(zoneID)
+			room = "Zone" + fmt.Sprint(zoneID)
 		} 
 		//room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
 
@@ -396,7 +420,7 @@ func storeContacts(SplunkChannel chan StoredContact) {
 
 func advertise() {
 
-    _, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "18", "17", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]).Output()
+    _, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "1A", "19", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19], b[20], b[21]).Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
@@ -412,30 +436,3 @@ func advertise() {
     }
 
 }
-
-/*
-func advertise() {
-	
-    out, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "18", "17", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]).Output()
-    if err != nil {
-        fmt.Printf("%s", err)
-    }
-	output := string(out[:])
-    fmt.Println(output)
-	
-    out, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "90", "00", "90", "00", "03", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
-    if err != nil {
-        fmt.Printf("%s", err)
-    }
-	output = string(out[:])
-    fmt.Println(output)
-	
-	out, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
-    if err != nil {
-        fmt.Printf("%s", err)
-    }
-	output = string(out[:])
-    fmt.Println(output)
-
-}
-*/

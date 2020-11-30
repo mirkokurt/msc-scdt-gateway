@@ -33,7 +33,19 @@ func readParamenters(b []string) {
 		}
 		var payload ParameterPayload
 		json.Unmarshal(body, &payload)
-		b[0] = hexToString(byte(160)) //0xA0
+		
+		switch GatewayMode {
+			case "external":
+				b[0] = hexToString(byte(160)) //0xA0 id of the Standard gateway
+				b[20] = hexToString(byte(payload.EXTERNAL_TAG_STARTUP_DELAY_PARAM))
+			case "internal":
+				b[0] = hexToString(byte(161)) //0xA1 if of the Setup gateway
+				b[20] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
+			default:
+				b[0] = hexToString(byte(161)) //0xA1 if of the Setup gateway
+				b[20] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
+		}
+		
 		b[1] = hexToString(byte(payload.DISTANCE_THR_PARAM))
 		b[2] = hexToString(byte(payload.DURATION_THR_PARAM))
 		b[3] = hexToString(byte(payload.TX_RATE_PARAM))
@@ -53,6 +65,8 @@ func readParamenters(b []string) {
 		b[17] = hexToString(byte(payload.QUUPPA_TIMEOUT_PARAM >> 8))
 		b[18] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM & 255))
 		b[19] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM >> 8))
+		b[21] = hexToString(byte(payload.ACC_PARAM))
+		
 
 	}
 }

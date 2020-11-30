@@ -34,6 +34,9 @@ type TagState struct {
 	BatteryLevel int16 `json:"BatteryLevel,omitempty"`
 	TotalContact int16 `json:"ToSync,omitempty"`
 	SyncContact  int16 `json:"Synced,omitempty"`
+	OpMode  string `json:"TagMode,omitempty"`
+	ParamVersion  int8 `json:"ParamVersion,omitempty"`
+	
 }
 
 type ParameterPayload struct {
@@ -54,6 +57,9 @@ type ParameterPayload struct {
 	QUUPPA_FORCE_EXIT_PERIOD_PARAM int8  `json:"QUUPPA_FORCE_EXIT_PERIOD_PARAM"`
 	QUUPPA_TIMEOUT_PARAM           int16 `json:"QUUPPA_TIMEOUT_PARAM"`
 	NO_MOVE_ACTIONS_TIMEOUT_PARAM  int16 `json:"NO_MOVE_ACTIONS_TIMEOUT_PARAM"`
+	INTERNAL_TAG_STARTUP_DELAY_PARAM int8 `json:"INTERNAL_TAG_STARTUP_DELAY_PARAM"`
+	EXTERNAL_TAG_STARTUP_DELAY_PARAM int8 `json:"EXTERNAL_TAG_STARTUP_DELAY_PARAM"`
+	ACC_PARAM int8 `json:"ACC_PARAM"`
 }
 
 // WebHookURL - URL of the specific Web Hook
@@ -85,3 +91,6 @@ var StartedRoutines int
 
 // BearerToken - Token to be used in the request for parameters
 var BearerToken string
+
+// GatewayMode - Gateway operational mode (Internal/External)
+var GatewayMode string
