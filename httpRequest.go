@@ -40,7 +40,7 @@ func readParamenters(b []string) {
 				b[21] = hexToString(byte(payload.EXTERNAL_TAG_STARTUP_DELAY_PARAM))
 			case "internal":
 				b[0] = hexToString(byte(161)) //0xA1 if of the Setup gateway
-				b[20] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
+				b[21] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
 			default:
 				b[0] = hexToString(byte(161)) //0xA1 if of the Setup gateway
 				b[21] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))

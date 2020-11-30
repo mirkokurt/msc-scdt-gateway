@@ -169,6 +169,11 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adap
 	err := connect(dev, ag, adapterID)
 	if err != nil {
 		log.Infof("Error is %v\n", err)
+		
+		// Remove this device from the cache for reconnection
+		log.Trace("Removing from cache ", dev.Path())
+		a.RemoveDevice(dev.Path())
+		
 		return
 	}
 	
@@ -259,7 +264,9 @@ func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error
 				
 		err := dev.Pair()
 		if err != nil {
+		
 			return fmt.Errorf("Pair failed: %s", err)
+
 		}
 		
 		pairTime = time.Now().UnixNano() - pairTime
@@ -420,7 +427,7 @@ func storeContacts(SplunkChannel chan StoredContact) {
 
 func advertise() {
 
-    _, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "1A", "19", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22]).Output()
+    _, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "1B", "1A", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22]).Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
