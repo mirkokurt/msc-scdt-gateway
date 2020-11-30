@@ -37,35 +37,36 @@ func readParamenters(b []string) {
 		switch GatewayMode {
 			case "external":
 				b[0] = hexToString(byte(160)) //0xA0 id of the Standard gateway
-				b[20] = hexToString(byte(payload.EXTERNAL_TAG_STARTUP_DELAY_PARAM))
+				b[21] = hexToString(byte(payload.EXTERNAL_TAG_STARTUP_DELAY_PARAM))
 			case "internal":
 				b[0] = hexToString(byte(161)) //0xA1 if of the Setup gateway
 				b[20] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
 			default:
 				b[0] = hexToString(byte(161)) //0xA1 if of the Setup gateway
-				b[20] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
+				b[21] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
 		}
 		
-		b[1] = hexToString(byte(payload.DISTANCE_THR_PARAM))
-		b[2] = hexToString(byte(payload.DURATION_THR_PARAM))
-		b[3] = hexToString(byte(payload.TX_RATE_PARAM))
-		b[4] = hexToString(byte(payload.GRACE_PERIOD_PARAM))
-		b[5] = hexToString(byte(payload.SCAN_WINDOW_PARAM))
-		b[6] = hexToString(byte(payload.SLEEP_WINDOW_PARAM))
-		b[7] = hexToString(byte(payload.PACKET_COMPUTE_DIST_PARAM))
-		b[8] = hexToString(byte(payload.ALERTING_DURATION_PARAM))
-		b[9] = hexToString(byte(payload.GW_SIGNAL_TIMEOUT_PARAM))
-		b[10] = hexToString(byte(payload.GW_PACKET_COMPUTE_DIST_PARAM))
-		b[11] = hexToString(byte(payload.GW_AVG_RSSI_PARAM))
-		b[12] = hexToString(byte(payload.BLE_TX_POWER_PARAM))
-		b[13] = hexToString(byte(payload.QUUPPA_PACKET_COMP_DIST_PARAM))
-		b[14] = hexToString(byte(payload.QUUPPA_AVG_RSSI_PARAM))
-		b[15] = hexToString(byte(payload.QUUPPA_FORCE_EXIT_PERIOD_PARAM))
-		b[16] = hexToString(byte(payload.QUUPPA_TIMEOUT_PARAM & 255))
-		b[17] = hexToString(byte(payload.QUUPPA_TIMEOUT_PARAM >> 8))
-		b[18] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM & 255))
-		b[19] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM >> 8))
-		b[21] = hexToString(byte(payload.ACC_PARAM))
+		b[1] = hexToString(byte(payload.VERSION))
+		b[2] = hexToString(byte(payload.DISTANCE_THR_PARAM))
+		b[3] = hexToString(byte(payload.DURATION_THR_PARAM))
+		b[4] = hexToString(byte(payload.TX_RATE_PARAM))
+		b[5] = hexToString(byte(payload.GRACE_PERIOD_PARAM))
+		b[6] = hexToString(byte(payload.SCAN_WINDOW_PARAM))
+		b[7] = hexToString(byte(payload.SLEEP_WINDOW_PARAM))
+		b[8] = hexToString(byte(payload.PACKET_COMPUTE_DIST_PARAM))
+		b[9] = hexToString(byte(payload.ALERTING_DURATION_PARAM))
+		b[10] = hexToString(byte(payload.GW_SIGNAL_TIMEOUT_PARAM))
+		b[11] = hexToString(byte(payload.GW_PACKET_COMPUTE_DIST_PARAM))
+		b[12] = hexToString(byte(payload.GW_AVG_RSSI_PARAM))
+		b[13] = hexToString(byte(payload.BLE_TX_POWER_PARAM))
+		b[14] = hexToString(byte(payload.QUUPPA_PACKET_COMP_DIST_PARAM))
+		b[15] = hexToString(byte(payload.QUUPPA_AVG_RSSI_PARAM))
+		b[16] = hexToString(byte(payload.QUUPPA_FORCE_EXIT_PERIOD_PARAM))
+		b[17] = hexToString(byte(payload.QUUPPA_TIMEOUT_PARAM & 255))
+		b[18] = hexToString(byte(payload.QUUPPA_TIMEOUT_PARAM >> 8))
+		b[19] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM & 255))
+		b[20] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM >> 8))
+		b[22] = hexToString(byte(payload.ACC_PARAM))
 		
 
 	}

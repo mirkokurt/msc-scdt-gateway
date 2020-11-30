@@ -40,6 +40,7 @@ type TagState struct {
 }
 
 type ParameterPayload struct {
+	VERSION                    	   int8  `json:"VERSION"`
 	DISTANCE_THR_PARAM             int8  `json:"DISTANCE_THR_PARAM"`
 	DURATION_THR_PARAM             int8  `json:"DURATION_THR_PARAM"`
 	TX_RATE_PARAM                  int8  `json:"TX_RATE_PARAM"`
