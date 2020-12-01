@@ -36,6 +36,7 @@ type TagState struct {
 	SyncContact  int16 `json:"Synced,omitempty"`
 	OpMode  string `json:"TagMode,omitempty"`
 	ParamVersion  int8 `json:"ParamVersion,omitempty"`
+	FWVersion  string `json:"FWVersion,omitempty"`
 	
 }
 

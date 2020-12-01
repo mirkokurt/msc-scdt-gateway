@@ -168,7 +168,7 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adap
 	
 	err := connect(dev, ag, adapterID)
 	if err != nil {
-		log.Infof("Error is %v\n", err)
+		log.Infof("Error in connect, %v\n", err)
 		
 		// Remove this device from the cache for reconnection
 		log.Trace("Removing from cache ", dev.Path())
@@ -318,14 +318,16 @@ func formatContact(id1 string, b []byte) {
 	id2_check := uint32(binary.LittleEndian.Uint16(b[0:2])) + binary.LittleEndian.Uint32(b[2:6])
 
 	// if id2 = 0, this is a state message
-	// payload example { 0, 0, 0, 0, 0, 0, syncTS, syncTS, syncTS, syncTS, totalContact, totalContact, batteryLevel, batteryLevel }
+	// payload example { 0, 0, 0, 0, FWVersion_release, FWVersion_minor/build, syncTS, syncTS, syncTS, syncTS, totalContact, totalContact, batteryLevel, batteryLevel }
 	if id2_check == 0 {
 		fmt.Printf("Array is % X:", b)
+		
+		fwVer := fmt.Sprint(b[4]) + "." + fmt.Sprint((b[5]&240)>>4) + "." + fmt.Sprint(b[5]&15)
+		
 		syncTS := int64(binary.LittleEndian.Uint32(b[6:10]))
 		totalContact := int16(binary.LittleEndian.Uint16(b[10:12]))
 		batteryLevel := int16(binary.LittleEndian.Uint16(b[12:14]))
 		opMode := uint8((b[14] & 192) >> 6)
-		fmt.Printf(">>>>>>>>>>>>>>>>>>>>>>>> OpMode is ", opMode)
 		opModeString := ""
 		switch opMode {
 			case 1:
@@ -336,6 +338,7 @@ func formatContact(id1 string, b []byte) {
 				opModeString = ""
 		}
 		paramVersion := int8(b[14] & 63)
+		
 
 		ts, found := tagsState.Load(id1)
 		if found {
@@ -346,6 +349,7 @@ func formatContact(id1 string, b []byte) {
 			ts.(*TagState).BatteryLevel = batteryLevel
 			ts.(*TagState).OpMode = opModeString
 			ts.(*TagState).ParamVersion = paramVersion
+			ts.(*TagState).FWVersion = fwVer
 		} else {
 			var its TagState
 			its.TagID = id1
@@ -356,6 +360,7 @@ func formatContact(id1 string, b []byte) {
 			its.BatteryLevel = batteryLevel
 			its.OpMode = opModeString
 			its.ParamVersion = paramVersion
+			its.FWVersion = fwVer
 			tagsState.Store(id1, &its)
 		}
 
