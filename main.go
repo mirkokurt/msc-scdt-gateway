@@ -1,26 +1,26 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	"log"
 	"time"
-
-	//"strings"
+	"os/exec"
+	"strings"
 	"encoding/binary"
 	"encoding/hex"
 	"sync"
 
-	"github.com/go-ble/ble"
-	"github.com/go-ble/ble/examples/lib/dev"
-	"github.com/pkg/errors"
+	"github.com/godbus/dbus"
+	"github.com/muka/go-bluetooth/hw"
+	"github.com/muka/go-bluetooth/api"
+	"github.com/muka/go-bluetooth/bluez/profile/adapter"
+	"github.com/muka/go-bluetooth/bluez/profile/agent"
+	"github.com/muka/go-bluetooth/bluez/profile/device"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
-	device = flag.String("device", "default", "implementation of ble")
 	name   = flag.String("name", "LED", "name of remote peripheral")
-	//uuid   = flag.String("uuid", "19b10000e8f2537e4f6cd104768a1214", "uiid to search for")
 	serviceUuid        = flag.String("sUuid", "6e0e5437-0c82-4a6c-8c6b-503fad255e03", "uiid to search for")
 	characteristicUuid = flag.String("cUuid", "87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb", "uiid to search for")
 	du                 = flag.Duration("du", 60*time.Second, "scanning duration")
@@ -32,12 +32,19 @@ var (
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
 	argMaxConnections  = flag.Int("max_connections", 5, "Max number of parallel connections to tags")
 	argBearerToken     = flag.String("bearer_token", "", "Token to be used in the request for parameters")
+	argGatewayMode     = flag.String("gateway_mode", "internal", "Gateway operational mode (internal/external)")
 )
 
 var connectMuX sync.Mutex
 var fileMuX sync.Mutex
 
+var b []string
+
+var end = make(chan struct{})
+
 func main() {
+
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Setup
 	flag.Parse()
 
 	WebHookURL = *argWebHook
@@ -45,106 +52,293 @@ func main() {
 	APIValue = *argWebHookAPIValue
 	MaxConnections = *argMaxConnections
 	BearerToken = *argBearerToken
+	GatewayMode=*argGatewayMode
+	
+	adapterID := "hci0"
+	
+	log.SetLevel(log.TraceLevel)
 
+	btmgmt := hw.NewBtMgmt(adapterID)
+
+	// set LE mode
+	btmgmt.SetPowered(false)
+	btmgmt.SetLe(true)
+	//btmgmt.SetBredr(false)
+	btmgmt.SetConnectable(false)
+	btmgmt.SetPowered(true)
+	
+	
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Set Authentication agent
+	// do not reuse agent0 from service
+	agent.NextAgentPath()
+	
+	//Connect DBus System bus
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		log.Infof("Error is %v\n", err)
+		return
+	}
+
+	ag := agent.NewSimpleAgent()
+	ag.SetPassKey(123456)
+	err = agent.ExposeAgent(conn, ag, agent.CapKeyboardOnly, true)
+	if err != nil {
+		log.Infof("Error is %v\n", err)
+		return
+	}
+	
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Init parameters to be sent to Tags
+	b = []string{"00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00"}
+
+	// Create backup file if it not exists
 	if !FileExists("logfile") {
 		CreateFile("logfile")
 	}
-
-	//file, err := os.Create("logfile")
-	//check(err)
-	//defer file.Close()
-
-	//log.SetOutput(f)
-	//log.Println("This is a test log entry")
-
+	
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Create the routine that send contact to Splunk
 	SplunkChannel = make(chan StoredContact, 5000)
-
 	go storeContacts(SplunkChannel)
+	
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Start advertising
+	go advertisingRoutine()
+	
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Discover devices
+	log.Infof("Discovering on %s", adapterID)
 
-	d, err := dev.NewDevice(*device)
+	a, err := adapter.NewAdapter1FromAdapterID(adapterID)
 	if err != nil {
-		log.Fatalf("can't new device : %s", err)
+		log.Infof("Error is %v\n", err)
+		return
 	}
-	ble.SetDefaultDevice(d)
+	log.Infof("Adapter created")
+	
+	// Removes devices from the cache
+	//go cleanDeviceCacheRoutine(a)
+	flushDevices(a)
+	
+	filter := adapter.NewDiscoveryFilter()
+	
+	// Search for a specific service
+	filter.AddUUIDs("6e0e5437-0c82-4a6c-8c6b-503fad255e03")
+	filter.DuplicateData = false
 
-	// Default to search device with a service with UUID specified by user
-	filter := func(a ble.Advertisement) bool {
-		for _, s := range a.Services() {
-			if s.Equal(ble.MustParse(*serviceUuid)) {
-				return true
-			}
+	discovery, cancel, err := api.Discover(a, &filter)
+	if err != nil {
+		log.Infof("Error is %v\n", err)
+		return
+	}
+	defer cancel()	
+
+	for ev := range discovery {
+	
+		dev, err := device.NewDevice1(ev.Path)
+		if err != nil {
+			//log.Infof("Scan error is %v\n", err)
+			continue 
 		}
-		return false
+		
+		if dev == nil || dev.Properties == nil {
+			continue
+		}
+		
+		// Start a routine to create the connection and subscribe to contact characteristic
+		go connectToDevice(dev, ag, a, adapterID)
 	}
-
-	stopAdvertise := make(chan struct{})
-	go advertising(d)
-
-	for j := 0; j < MaxConnections; j++ {
-		//fmt.Printf("Routine number: %d \n", j)
-		go peripheralConnect(filter)
-	}
-
-	<-stopAdvertise
 
 }
 
-//Start advertising
-func advertising(d ble.Device) {
-	b := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+func flushDevices(a *adapter.Adapter1) {
+	err := a.FlushDevices()
+	if err != nil {
+		//log.Infof("Error1 is %v\n", err)
+		//return 
+	}
+	log.Infof("Flush device")
+}
+
+func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adapter1, adapterID string){
+
+	p := dev.Properties
+
+	n := p.Alias
+	if p.Name != "" {
+		n = p.Name
+	}
+	log.Infof("Discovered (%s) %s", n, p.Address)
+	
+	err := connect(dev, ag, adapterID)
+	if err != nil {
+		log.Infof("Error in connect, %v\n", err)
+		
+		// Remove this device from the cache for reconnection
+		log.Trace("Removing from cache ", dev.Path())
+		a.RemoveDevice(dev.Path())
+		
+		return
+	}
+	
+	charact, err := dev.GetCharByUUID("87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb")
+	if err != nil {
+		log.Infof("Error is %v\n", err)
+		return
+	}
+		
+	err = charact.StartNotify()
+	if err != nil {
+		log.Infof("Error is %v\n", err)
+		return
+	}
+		
+	
+	log.Infof("Subscribe to characteristic")
+	watchProps, err := charact.WatchProperties()
+	if err != nil {
+		log.Infof("Error is %v\n", err)
+		return
+	}
+	
+	dataReceived := false
+	
+	go func() {
+		log.Infof("Device address is %s", p.Address)
+		id1 := p.Address
+		prec := time.Now().UnixNano()
+		
+		for propUpdate := range watchProps {
+			
+			if propUpdate.Name == "Value" {
+				log.Debugf("--> updated %s=%v", propUpdate.Name, propUpdate.Value)
+				
+				// Signal that a data has been received
+				dataReceived = true
+				
+				// Calculate and print the passed time
+				diff := time.Now().UnixNano() - prec
+				log.Trace("Diff is: ", diff)
+				prec = time.Now().UnixNano()
+				
+				// Format and send the contact to Splunk
+				formatContact(id1, propUpdate.Value.([]byte))
+			}
+		}
+	}()
+	
+	// Check every 5 seconds if at lest one data record has been receive, if not disconnect
 	for {
-		readParamenters(b)
-		ctx := ble.WithSigHandler(context.WithTimeout(context.Background(), 60*5*time.Second))
-		chkErr(d.AdvertiseMfgData(ctx, 555, b))
+		time.Sleep(5 * time.Second)
+		if dataReceived == false {
+			break
+		}
+		dataReceived = false
 	}
+	
+	storeState(p.Address)
+	
+	log.Trace("Disconnecting from ", p.Address)
+	dev.Disconnect()
+	
+	// Remove this device from the cache for reconnection
+	log.Trace("Removing from cache ", dev.Path())
+	a.RemoveDevice(dev.Path())
+	
 }
 
-func exploreAndSubscribe(cln ble.Client, p *ble.Profile) error {
-	for _, s := range p.Services {
-		fmt.Printf("    Service: %s %s, Handle (0x%02X)\n", s.UUID, ble.Name(s.UUID), s.Handle)
-		//if s.UUID.Equal(ble.MustParse("19b10000e8f2537e4f6cd104768a1214")) {
-		if s.UUID.Equal(ble.MustParse(*serviceUuid)) {
-			for _, c := range s.Characteristics {
-				//if c.UUID.Equal(ble.MustParse("19b10001e8f2537e4f6cd104768a1214")) {
-				if c.UUID.Equal(ble.MustParse(*characteristicUuid)) {
-					if *sub != 0 {
-						if (c.Property & ble.CharIndicate) != 0 {
-							fmt.Printf("\n-- Subscribe to indication of %s --\n", *sub)
-							id1 := cln.Addr().String()
-							prec := time.Now().UnixNano()
-							h := func(req []byte) {
-								fmt.Printf("Address is: %s\n", id1)
-								diff := time.Now().UnixNano() - prec
-								fmt.Print("Diff is: ")
-								fmt.Println(diff)
-								prec = time.Now().UnixNano()
-								formatContact(id1, req)
-							}
-							if err := cln.Subscribe(c, true, h); err != nil {
-								log.Fatalf("subscribe failed: %s", err)
-							}
+func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error {
 
-							<-cln.Disconnected()
-						}
-					}
-				}
+	props, err := dev.GetProperties()
+	if err != nil {
+		return fmt.Errorf("Failed to load props: %s", err)
+	}
+
+	log.Infof("Found device name=%s addr=%s rssi=%d", props.Name, props.Address, props.RSSI)
+
+	if props.Connected {
+		log.Info("Device is connected")
+		return nil
+	}
+
+	if !props.Paired || !props.Trusted {
+		log.Info("Pairing device")
+		
+		pairTime := time.Now().UnixNano()
+				
+		err := dev.Pair()
+		if err != nil {
+		
+			return fmt.Errorf("Pair failed: %s", err)
+
+		}
+		
+		pairTime = time.Now().UnixNano() - pairTime
+		log.Trace("Pair time is: ", pairTime)
+
+		log.Info("Pair succeed, connecting...")
+		//agent.SetTrusted(adapterID, dev.Path())
+	}
+
+	if !props.Connected {
+		log.Info("Connecting device")
+		err = dev.Connect()
+		if err != nil {
+			if !strings.Contains(err.Error(), "Connection refused") {
+				return fmt.Errorf("Connect failed: %s", err)
 			}
 		}
 	}
+
 	return nil
+}
+
+func advertisingRoutine() {
+
+	// Update parameter from Splunk
+	go updateParameters()
+	
+	
+
+	ticker := time.NewTicker(5 * time.Second)
+	for range ticker.C {
+		advertise()
+	}	
+}
+
+func updateParameters() {
+	// Update parameters for the first time
+	readParamenters(b)
+	
+	// Update parameters periodically
+	ticker := time.NewTicker(300 * time.Second)
+	for range ticker.C {	
+		readParamenters(b)
+	}
 }
 
 func formatContact(id1 string, b []byte) {
 
-	id2_check := uint32(binary.LittleEndian.Uint16(b[0:2])) + binary.LittleEndian.Uint32(b[2:6])
+	id2_check := binary.LittleEndian.Uint32(b[0:4])
 
 	// if id2 = 0, this is a state message
-	// payload example { 0, 0, 0, 0, 0, 0, syncTS, syncTS, syncTS, syncTS, totalContact, totalContact, batteryLevel, batteryLevel }
+	// payload example { 0, 0, 0, 0, FWVersion_release, FWVersion_minor/build, syncTS, syncTS, syncTS, syncTS, totalContact, totalContact, batteryLevel, batteryLevel }
 	if id2_check == 0 {
-		fmt.Printf("Arra is % X:", b)
+		fmt.Printf("Array is % X:", b)
+		
+		fwVer := fmt.Sprint(b[4]) + "." + fmt.Sprint((b[5]&240)>>4) + "." + fmt.Sprint(b[5]&15)
+		
 		syncTS := int64(binary.LittleEndian.Uint32(b[6:10]))
 		totalContact := int16(binary.LittleEndian.Uint16(b[10:12]))
 		batteryLevel := int16(binary.LittleEndian.Uint16(b[12:14]))
+		opMode := uint8((b[14] & 192) >> 6)
+		opModeString := ""
+		switch opMode {
+			case 1:
+				opModeString = "Client"
+			case 2:
+				opModeString = "Worker"
+			default:
+				opModeString = ""
+		}
+		paramVersion := int8(b[14] & 63)
+		
 
 		ts, found := tagsState.Load(id1)
 		if found {
@@ -153,6 +347,9 @@ func formatContact(id1 string, b []byte) {
 			ts.(*TagState).TotalContact = totalContact
 			ts.(*TagState).SyncContact = 0
 			ts.(*TagState).BatteryLevel = batteryLevel
+			ts.(*TagState).OpMode = opModeString
+			ts.(*TagState).ParamVersion = paramVersion
+			ts.(*TagState).FWVersion = fwVer
 		} else {
 			var its TagState
 			its.TagID = id1
@@ -161,6 +358,9 @@ func formatContact(id1 string, b []byte) {
 			its.TotalContact = totalContact
 			its.SyncContact = 0
 			its.BatteryLevel = batteryLevel
+			its.OpMode = opModeString
+			its.ParamVersion = paramVersion
+			its.FWVersion = fwVer
 			tagsState.Store(id1, &its)
 		}
 
@@ -172,7 +372,15 @@ func formatContact(id1 string, b []byte) {
 		startTs := int64(binary.LittleEndian.Uint32(b[6:10]))
 		duration := int16(binary.LittleEndian.Uint16(b[10:12]))
 		avgRSSI := int8(b[12])
-		room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
+		
+		zoneID := binary.LittleEndian.Uint16(b[13:15])
+		//fmt.Println("ZoneID is : ", zoneID)
+		room := ""
+		// ignore if 0xBFFF
+		if zoneID != 49151 {
+			room = "Zone" + fmt.Sprint(zoneID)
+		} 
+		//room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
 
 		adjustedTs := nowTimestamp()
 		ts, found := tagsState.Load(id1)
@@ -201,75 +409,6 @@ func nowTimestamp() int64 {
 	return time.Now().UnixNano() / (int64(time.Millisecond) / int64(time.Nanosecond))
 }
 
-func propString(p ble.Property) string {
-	var s string
-	for k, v := range map[ble.Property]string{
-		ble.CharBroadcast:   "B",
-		ble.CharRead:        "R",
-		ble.CharWriteNR:     "w",
-		ble.CharWrite:       "W",
-		ble.CharNotify:      "N",
-		ble.CharIndicate:    "I",
-		ble.CharSignedWrite: "S",
-		ble.CharExtended:    "E",
-	} {
-		if p&k != 0 {
-			s += v
-		}
-	}
-	return s
-}
-
-func chkErr(err error) {
-	switch errors.Cause(err) {
-	case nil:
-	case context.DeadlineExceeded:
-		fmt.Printf("done\n")
-	case context.Canceled:
-		fmt.Printf("canceled\n")
-	default:
-		log.Fatalf(err.Error())
-	}
-}
-
-func peripheralConnect(filter func(ble.Advertisement) bool) {
-
-	for {
-		fmt.Printf("Routine started\n")
-		ctx := context.Background()
-
-		connectMuX.Lock()
-		cln, err := ConnectWithDuplicate(ctx, filter)
-		if err != nil {
-			fmt.Printf("can't connect : %s \n", err)
-			continue
-		}
-		connectMuX.Unlock()
-		StartedConnections++
-
-		// Define a channel to intercept the end fo communication if its closed by the device
-		closedConnection := make(chan struct{})
-		go func() {
-			<-cln.Disconnected()
-			tagId := cln.Addr().String()
-			fmt.Printf("[ %s ] is disconnected \n", tagId)
-			storeState(tagId)
-			close(closedConnection)
-		}()
-
-		fmt.Printf("Discovering profile...\n")
-		p, err := cln.DiscoverProfile(true)
-		if err != nil {
-			fmt.Printf("can't discover profile: %s \n", err)
-			continue
-		}
-
-		// Start the exploration.
-		exploreAndSubscribe(cln, p)
-
-		<-closedConnection
-	}
-}
 
 func storeState(TagId string) {
 	fmt.Printf("Sending state for tag %s \n", TagId)
@@ -291,35 +430,21 @@ func storeContacts(SplunkChannel chan StoredContact) {
 	}
 }
 
-// Connect searches for and connects to a Peripheral which matches specified condition.
-func ConnectWithDuplicate(ctx context.Context, f ble.AdvFilter) (ble.Client, error) {
-	ctx2, cancel := context.WithCancel(ctx)
-	go func() {
-		select {
-		case <-ctx.Done():
-			//cancel()
-		case <-ctx2.Done():
-		}
-	}()
+func advertise() {
 
-	ch := make(chan ble.Advertisement)
-	fn := func(a ble.Advertisement) {
-		cancel()
-		ch <- a
-	}
-	fmt.Printf("Starting scanning \n")
-	if err := ble.Scan(ctx2, true, fn, f); err != nil {
-		if err != context.Canceled {
-			return nil, errors.Wrap(err, "can't scan")
-		}
-	}
-	fmt.Printf("Starting a connection \n")
-	cln, err := ble.Dial(ctx, (<-ch).Addr())
-	return cln, errors.Wrap(err, "can't dial")
-}
+    _, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "1B", "1A", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22]).Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
+	
+    _, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "90", "00", "90", "00", "06", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
+	
+	_, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
+    if err != nil {
+        fmt.Printf("%s", err)
+    }
 
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
 }

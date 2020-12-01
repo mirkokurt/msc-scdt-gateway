@@ -34,10 +34,14 @@ type TagState struct {
 	BatteryLevel int16 `json:"BatteryLevel,omitempty"`
 	TotalContact int16 `json:"ToSync,omitempty"`
 	SyncContact  int16 `json:"Synced,omitempty"`
+	OpMode  string `json:"TagMode,omitempty"`
+	ParamVersion  int8 `json:"ParamVersion,omitempty"`
+	FWVersion  string `json:"FWVersion,omitempty"`
+	
 }
 
 type ParameterPayload struct {
-	VERSION                        int8  `json:"VERSION"`
+	VERSION                    	   int8  `json:"VERSION"`
 	DISTANCE_THR_PARAM             int8  `json:"DISTANCE_THR_PARAM"`
 	DURATION_THR_PARAM             int8  `json:"DURATION_THR_PARAM"`
 	TX_RATE_PARAM                  int8  `json:"TX_RATE_PARAM"`
@@ -55,6 +59,9 @@ type ParameterPayload struct {
 	QUUPPA_FORCE_EXIT_PERIOD_PARAM int8  `json:"QUUPPA_FORCE_EXIT_PERIOD_PARAM"`
 	QUUPPA_TIMEOUT_PARAM           int16 `json:"QUUPPA_TIMEOUT_PARAM"`
 	NO_MOVE_ACTIONS_TIMEOUT_PARAM  int16 `json:"NO_MOVE_ACTIONS_TIMEOUT_PARAM"`
+	INTERNAL_TAG_STARTUP_DELAY_PARAM int8 `json:"INTERNAL_TAG_STARTUP_DELAY_PARAM"`
+	EXTERNAL_TAG_STARTUP_DELAY_PARAM int8 `json:"EXTERNAL_TAG_STARTUP_DELAY_PARAM"`
+	ACC_PARAM int8 `json:"ACC_PARAM"`
 }
 
 // WebHookURL - URL of the specific Web Hook
@@ -69,7 +76,7 @@ var APIKey string
 // APIValue - Set the value to be used in the API key authorization
 var APIValue string
 
-// SplunkChannel - Channel to be shared between routines in order to store contacts
+// splunkChannel - Channel to be shared between routines in order to store contacts
 var SplunkChannel chan StoredContact
 
 // SplunkAddress - Ip address of the Splunk server
@@ -86,3 +93,6 @@ var StartedRoutines int
 
 // BearerToken - Token to be used in the request for parameters
 var BearerToken string
+
+// GatewayMode - Gateway operational mode (Internal/External)
+var GatewayMode string

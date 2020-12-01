@@ -8,7 +8,7 @@ import (
 	"net/http"
 )
 
-func readParamenters(b []byte) {
+func readParamenters(b []string) {
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
@@ -33,26 +33,48 @@ func readParamenters(b []byte) {
 		}
 		var payload ParameterPayload
 		json.Unmarshal(body, &payload)
-		b[0] = byte(160)
-		b[1] = byte(payload.VERSION)
-		b[2] = byte(payload.DISTANCE_THR_PARAM)
-		b[3] = byte(payload.DURATION_THR_PARAM)
-		b[4] = byte(payload.TX_RATE_PARAM)
-		b[5] = byte(payload.GRACE_PERIOD_PARAM)
-		b[6] = byte(payload.SCAN_WINDOW_PARAM)
-		b[7] = byte(payload.SLEEP_WINDOW_PARAM)
-		b[8] = byte(payload.PACKET_COMPUTE_DIST_PARAM)
-		b[9] = byte(payload.ALERTING_DURATION_PARAM)
-		b[10] = byte(payload.GW_SIGNAL_TIMEOUT_PARAM)
-		b[11] = byte(payload.GW_PACKET_COMPUTE_DIST_PARAM)
-		b[12] = byte(payload.GW_AVG_RSSI_PARAM)
-		b[13] = byte(payload.BLE_TX_POWER_PARAM)
-		b[14] = byte(payload.QUUPPA_PACKET_COMP_DIST_PARAM)
-		b[15] = byte(payload.QUUPPA_AVG_RSSI_PARAM)
-		b[16] = byte(payload.QUUPPA_FORCE_EXIT_PERIOD_PARAM)
-		b[17] = byte(payload.QUUPPA_TIMEOUT_PARAM & 255)
-		b[18] = byte(payload.QUUPPA_TIMEOUT_PARAM >> 8)
-		b[19] = byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM & 255)
-		b[20] = byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM >> 8)
+		
+		switch GatewayMode {
+			case "external":
+				b[0] = hexToString(byte(160)) //0xA0 id of the Standard gateway
+				b[21] = hexToString(byte(payload.EXTERNAL_TAG_STARTUP_DELAY_PARAM))
+			case "internal":
+				b[0] = hexToString(byte(161)) //0xA1 if of the Setup gateway
+				b[21] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
+			default:
+				b[0] = hexToString(byte(161)) //0xA1 if of the Setup gateway
+				b[21] = hexToString(byte(payload.INTERNAL_TAG_STARTUP_DELAY_PARAM))
+		}
+		
+		b[1] = hexToString(byte(payload.VERSION))
+		b[2] = hexToString(byte(payload.DISTANCE_THR_PARAM))
+		b[3] = hexToString(byte(payload.DURATION_THR_PARAM))
+		b[4] = hexToString(byte(payload.TX_RATE_PARAM))
+		b[5] = hexToString(byte(payload.GRACE_PERIOD_PARAM))
+		b[6] = hexToString(byte(payload.SCAN_WINDOW_PARAM))
+		b[7] = hexToString(byte(payload.SLEEP_WINDOW_PARAM))
+		b[8] = hexToString(byte(payload.PACKET_COMPUTE_DIST_PARAM))
+		b[9] = hexToString(byte(payload.ALERTING_DURATION_PARAM))
+		b[10] = hexToString(byte(payload.GW_SIGNAL_TIMEOUT_PARAM))
+		b[11] = hexToString(byte(payload.GW_PACKET_COMPUTE_DIST_PARAM))
+		b[12] = hexToString(byte(payload.GW_AVG_RSSI_PARAM))
+		b[13] = hexToString(byte(payload.BLE_TX_POWER_PARAM))
+		b[14] = hexToString(byte(payload.QUUPPA_PACKET_COMP_DIST_PARAM))
+		b[15] = hexToString(byte(payload.QUUPPA_AVG_RSSI_PARAM))
+		b[16] = hexToString(byte(payload.QUUPPA_FORCE_EXIT_PERIOD_PARAM))
+		b[17] = hexToString(byte(payload.QUUPPA_TIMEOUT_PARAM & 255))
+		b[18] = hexToString(byte(payload.QUUPPA_TIMEOUT_PARAM >> 8))
+		b[19] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM & 255))
+		b[20] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM >> 8))
+		b[22] = hexToString(byte(payload.ACC_PARAM))
+		
+
 	}
+}
+
+func hexToString(b byte) string {
+	if b < 16 {
+		return fmt.Sprintf("0%X", b)
+	}
+	return fmt.Sprintf("%X", b)
 }
