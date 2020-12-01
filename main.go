@@ -315,7 +315,7 @@ func updateParameters() {
 
 func formatContact(id1 string, b []byte) {
 
-	id2_check := uint32(binary.LittleEndian.Uint16(b[0:2])) + binary.LittleEndian.Uint32(b[2:6])
+	id2_check := binary.LittleEndian.Uint32(b[0:4])
 
 	// if id2 = 0, this is a state message
 	// payload example { 0, 0, 0, 0, FWVersion_release, FWVersion_minor/build, syncTS, syncTS, syncTS, syncTS, totalContact, totalContact, batteryLevel, batteryLevel }
