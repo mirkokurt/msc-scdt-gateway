@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"sync"
+	"strconv"
 
 	"github.com/godbus/dbus"
 	"github.com/muka/go-bluetooth/hw"
@@ -80,7 +81,6 @@ func main() {
 	}
 
 	ag := agent.NewSimpleAgent()
-	ag.SetPassKey(123456)
 	err = agent.ExposeAgent(conn, ag, agent.CapKeyboardOnly, true)
 	if err != nil {
 		log.Infof("Error is %v\n", err)
@@ -165,6 +165,11 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adap
 		n = p.Name
 	}
 	log.Infof("Discovered (%s) %s", n, p.Address)
+	
+	//Eg: 45:E3:7A:03:55:EF -----> 4 4 7 0 5 4
+	passkey := computePassKey(p.Address)
+	ag.SetPassKey(passkey)
+
 	
 	err := connect(dev, ag, adapterID)
 	if err != nil {
@@ -294,12 +299,13 @@ func advertisingRoutine() {
 	// Update parameter from Splunk
 	go updateParameters()
 	
+	defer stopAdvertise()
 	
-
 	ticker := time.NewTicker(5 * time.Second)
 	for range ticker.C {
-		advertise()
+		startAdvertise()
 	}	
+
 }
 
 func updateParameters() {
@@ -430,21 +436,48 @@ func storeContacts(SplunkChannel chan StoredContact) {
 	}
 }
 
-func advertise() {
+func startAdvertise() {
 
     _, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "1B", "1A", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22]).Output()
     if err != nil {
-        fmt.Printf("%s", err)
+        log.Trace("%s", err)
     }
 	
     _, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "90", "00", "90", "00", "06", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
     if err != nil {
-        fmt.Printf("%s", err)
+        log.Trace("%s", err)
     }
 	
 	_, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
     if err != nil {
-        fmt.Printf("%s", err)
+        log.Trace("%s", err)
     }
 
+}
+
+func stopAdvertise() {
+	log.Trace("Stop advertising")
+	_, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "00").Output()
+    if err != nil {
+        log.Trace("%s", err)
+    }
+}
+
+func computePassKey(ar string) uint32 {
+
+
+	log.Trace(">>>>>>>>>>>>>>>>>>>>>>>>>>>> Address is ", ar)
+
+	first, _ := strconv.ParseInt(string(ar[0]), 16, 8)
+	second, _  := strconv.ParseInt(string(ar[3]), 16, 8)
+	third, _  := strconv.ParseInt(string(ar[6]), 16, 8)
+	fourth, _  := strconv.ParseInt(string(ar[9]), 16, 8) 
+	fifth, _  := strconv.ParseInt(string(ar[12]), 16, 8) 
+	sixth, _  := strconv.ParseInt(string(ar[15]), 16, 8) 
+	
+	passkey := uint32(first%10*100000 + second%10*10000 + third%10*1000 + fourth%10*100 + fifth%10*10 + sixth%10)
+	
+	log.Trace(">>>>>>>>>>>>>>>>>>>>>>>>>>>> Passkey is ", passkey)
+	
+	return passkey
 }
