@@ -150,7 +150,7 @@ func main() {
 func flushDevices(a *adapter.Adapter1) {
 	err := a.FlushDevices()
 	if err != nil {
-		//log.Infof("Error1 is %v\n", err)
+		//log.Infof("Error is %v\n", err)
 		//return 
 	}
 	log.Infof("Flush device")
@@ -200,6 +200,7 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adap
 	dataReceived := false
 	
 	go func() {
+	
 		log.Infof("Device address is %s", p.Address)
 		id1 := p.Address
 		prec := time.Now().UnixNano()
@@ -221,6 +222,8 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adap
 				formatContact(id1, propUpdate.Value.([]byte))
 			}
 		}
+		
+		log.Trace("Listener routine stopped")
 	}()
 	
 	// Check every 5 seconds if at lest one data record has been receive, if not disconnect
@@ -240,6 +243,9 @@ func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adap
 	// Remove this device from the cache for reconnection
 	log.Trace("Removing from cache ", dev.Path())
 	a.RemoveDevice(dev.Path())
+	
+	log.Trace("Stop the change listener routine")
+	close(watchProps)
 	
 }
 
