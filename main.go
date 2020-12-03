@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"sync"
+	"strconv"
 
 	"github.com/godbus/dbus"
 	"github.com/muka/go-bluetooth/hw"
@@ -82,7 +83,6 @@ func main() {
 	}
 
 	ag := agent.NewSimpleAgent()
-	ag.SetPassKey(123456)
 	err = agent.ExposeAgent(conn, ag, agent.CapKeyboardOnly, true)
 	if err != nil {
 		log.Infof("Error is %v\n", err)
@@ -157,6 +157,12 @@ func main() {
 			n = p.Name
 		}
 		log.Infof("Discovered (%s) %s", n, p.Address)
+		
+		//Change the passkey using MAC address of the peripheral
+		//Eg: 45:E3:7A:03:55:EF -----> 4 4 7 0 5 4
+		//passkey := computePassKey(p.Address)
+		ag.SetPassKey(123456)
+		//ag.SetPassKey(passkey)
 		
 		err = connect(dev, ag, adapterID)
 		if err != nil {
@@ -467,4 +473,22 @@ func advertise() {
         fmt.Printf("%s", err)
     }
 
+}
+
+func computePassKey(ar string) uint32 {
+
+	log.Trace(">>>>>>>>>>>>>>>>>>>>>>>>>>>> Address is ", ar)
+
+	first, _ := strconv.ParseInt(string(ar[0]), 16, 8)
+	second, _  := strconv.ParseInt(string(ar[3]), 16, 8)
+	third, _  := strconv.ParseInt(string(ar[6]), 16, 8)
+	fourth, _  := strconv.ParseInt(string(ar[9]), 16, 8) 
+	fifth, _  := strconv.ParseInt(string(ar[12]), 16, 8) 
+	sixth, _  := strconv.ParseInt(string(ar[15]), 16, 8) 
+	
+	passkey := uint32(first%10*100000 + second%10*10000 + third%10*1000 + fourth%10*100 + fifth%10*10 + sixth%10)
+	
+	log.Trace(">>>>>>>>>>>>>>>>>>>>>>>>>>>> Passkey is ", passkey)
+	
+	return passkey
 }
