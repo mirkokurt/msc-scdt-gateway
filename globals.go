@@ -30,7 +30,7 @@ var tagsState sync.Map
 type TagState struct {
 	TagID        string `json:"ID"`
 	LastSeen     int64  `json:"LastSeenTS,omitempty"`
-	SyncTime     int64
+	SyncTime     int64  `json:"-"`
 	BatteryLevel int16 `json:"BatteryLevel,omitempty"`
 	TotalContact int16 `json:"ToSync,omitempty"`
 	SyncContact  int16 `json:"Synced,omitempty"`
@@ -96,3 +96,6 @@ var BearerToken string
 
 // GatewayMode - Gateway operational mode (Internal/External)
 var GatewayMode string
+
+// MaxParallelRoutines - Max number of routines in synchronizing routines pool
+var MaxParallelRoutines int

@@ -33,6 +33,7 @@ var (
 	argMaxConnections  = flag.Int("max_connections", 5, "Max number of parallel connections to tags")
 	argBearerToken     = flag.String("bearer_token", "", "Token to be used in the request for parameters")
 	argGatewayMode     = flag.String("gateway_mode", "internal", "Gateway operational mode (internal/external)")
+	argMaxParallelRoutines = flag.Int("max_parallel_routines", 8, "Max number of routines in synchronizing routines pool")
 )
 
 var connectMuX sync.Mutex
@@ -53,6 +54,7 @@ func main() {
 	MaxConnections = *argMaxConnections
 	BearerToken = *argBearerToken
 	GatewayMode=*argGatewayMode
+	MaxParallelRoutines = *argMaxParallelRoutines
 	
 	adapterID := "hci0"
 	
@@ -128,6 +130,13 @@ func main() {
 		return
 	}
 	defer cancel()	
+	
+	devChan := make(chan *device.Device1)
+	
+	//start a pool of synchronize routines
+	for i := 0; i < MaxParallelRoutines; i++ {
+		go syncronize(devChan, a)
+	}
 
 	for ev := range discovery {
 	
@@ -141,10 +150,28 @@ func main() {
 			continue
 		}
 		
-		// Start a routine to create the connection and subscribe to contact characteristic
-		go connectToDevice(dev, ag, a, adapterID)
-	}
+		p := dev.Properties
 
+		n := p.Alias
+		if p.Name != "" {
+			n = p.Name
+		}
+		log.Infof("Discovered (%s) %s", n, p.Address)
+		
+		err = connect(dev, ag, adapterID)
+		if err != nil {
+			log.Infof("Error in connect, %v\n", err)
+			
+			// Remove this device from the cache for reconnection
+			log.Trace("Removing from cache ", dev.Path())
+			a.RemoveDevice(dev.Path())
+			
+			continue
+		}
+		
+		devChan <- dev
+		
+	}
 }
 
 func flushDevices(a *adapter.Adapter1) {
@@ -156,97 +183,84 @@ func flushDevices(a *adapter.Adapter1) {
 	log.Infof("Flush device")
 }
 
-func connectToDevice(dev *device.Device1, ag *agent.SimpleAgent, a *adapter.Adapter1, adapterID string){
+func syncronize(devChan chan *device.Device1, a *adapter.Adapter1){
 
-	p := dev.Properties
-
-	n := p.Alias
-	if p.Name != "" {
-		n = p.Name
-	}
-	log.Infof("Discovered (%s) %s", n, p.Address)
-	
-	err := connect(dev, ag, adapterID)
-	if err != nil {
-		log.Infof("Error in connect, %v\n", err)
+	for {
+		
+		dev := <- devChan
+		
+		p := dev.Properties
+		
+		charact, err := dev.GetCharByUUID("87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb")
+		if err != nil {
+			log.Infof("Error is %v\n", err)
+			return
+		}
+			
+		err = charact.StartNotify()
+		if err != nil {
+			log.Infof("Error is %v\n", err)
+			return
+		}
+			
+		
+		log.Infof("Subscribe to characteristic")
+		watchProps, err := charact.WatchProperties()
+		if err != nil {
+			log.Infof("Error is %v\n", err)
+			return
+		}
+		
+		dataReceived := false
+		
+		go func() {
+		
+			log.Infof("Device address is %s", p.Address)
+			id1 := p.Address
+			prec := time.Now().UnixNano()
+			
+			for propUpdate := range watchProps {
+				
+				if propUpdate.Name == "Value" {
+					log.Debugf("--> updated %s=%v", propUpdate.Name, propUpdate.Value)
+					
+					// Signal that a data has been received
+					dataReceived = true
+					
+					// Calculate and print the passed time
+					diff := time.Now().UnixNano() - prec
+					log.Trace("Diff is: ", diff)
+					prec = time.Now().UnixNano()
+					
+					// Format and send the contact to Splunk
+					formatContact(id1, propUpdate.Value.([]byte))
+				}
+			}
+			
+			log.Trace("Listener routine stopped")
+		}()
+		
+		// Check every 5 seconds if at lest one data record has been receive, if not disconnect
+		for {
+			time.Sleep(5 * time.Second)
+			if dataReceived == false {
+				break
+			}
+			dataReceived = false
+		}
+		
+		storeState(p.Address)
+		
+		log.Trace("Disconnecting from ", p.Address)
+		dev.Disconnect()
 		
 		// Remove this device from the cache for reconnection
 		log.Trace("Removing from cache ", dev.Path())
 		a.RemoveDevice(dev.Path())
 		
-		return
+		log.Trace("Stop the change listener routine")
+		close(watchProps)
 	}
-	
-	charact, err := dev.GetCharByUUID("87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb")
-	if err != nil {
-		log.Infof("Error is %v\n", err)
-		return
-	}
-		
-	err = charact.StartNotify()
-	if err != nil {
-		log.Infof("Error is %v\n", err)
-		return
-	}
-		
-	
-	log.Infof("Subscribe to characteristic")
-	watchProps, err := charact.WatchProperties()
-	if err != nil {
-		log.Infof("Error is %v\n", err)
-		return
-	}
-	
-	dataReceived := false
-	
-	go func() {
-	
-		log.Infof("Device address is %s", p.Address)
-		id1 := p.Address
-		prec := time.Now().UnixNano()
-		
-		for propUpdate := range watchProps {
-			
-			if propUpdate.Name == "Value" {
-				log.Debugf("--> updated %s=%v", propUpdate.Name, propUpdate.Value)
-				
-				// Signal that a data has been received
-				dataReceived = true
-				
-				// Calculate and print the passed time
-				diff := time.Now().UnixNano() - prec
-				log.Trace("Diff is: ", diff)
-				prec = time.Now().UnixNano()
-				
-				// Format and send the contact to Splunk
-				formatContact(id1, propUpdate.Value.([]byte))
-			}
-		}
-		
-		log.Trace("Listener routine stopped")
-	}()
-	
-	// Check every 5 seconds if at lest one data record has been receive, if not disconnect
-	for {
-		time.Sleep(5 * time.Second)
-		if dataReceived == false {
-			break
-		}
-		dataReceived = false
-	}
-	
-	storeState(p.Address)
-	
-	log.Trace("Disconnecting from ", p.Address)
-	dev.Disconnect()
-	
-	// Remove this device from the cache for reconnection
-	log.Trace("Removing from cache ", dev.Path())
-	a.RemoveDevice(dev.Path())
-	
-	log.Trace("Stop the change listener routine")
-	close(watchProps)
-	
 }
 
 func connect(dev *device.Device1, ag *agent.SimpleAgent, adapterID string) error {
