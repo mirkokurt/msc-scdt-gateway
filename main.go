@@ -239,7 +239,7 @@ func syncronize(devChan chan *device.Device1, a *adapter.Adapter1){
 					prec = time.Now().UnixNano()
 					
 					// Format and send the contact to Splunk
-					formatContact(id1, propUpdate.Value.([]byte))
+					processUpdate(id1, propUpdate.Value.([]byte))
 				}
 			}
 			
@@ -339,7 +339,7 @@ func updateParameters() {
 	}
 }
 
-func formatContact(id1 string, b []byte) {
+func processUpdate(id1 string, b []byte) {
 
 	id2_check := binary.LittleEndian.Uint32(b[0:4])
 
