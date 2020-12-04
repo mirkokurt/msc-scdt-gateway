@@ -160,9 +160,9 @@ func main() {
 		
 		//Change the passkey using MAC address of the peripheral
 		//Eg: 45:E3:7A:03:55:EF -----> 4 4 7 0 5 4
-		//passkey := computePassKey(p.Address)
-		ag.SetPassKey(123456)
-		//ag.SetPassKey(passkey)
+		passkey := computePassKey(p.Address)
+		//ag.SetPassKey(123456)
+		ag.SetPassKey(passkey)
 		
 		err = connect(dev, ag, adapterID)
 		if err != nil {
