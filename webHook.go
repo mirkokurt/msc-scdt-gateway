@@ -22,6 +22,8 @@ func sendContactToWebHook(contact StoredContact) {
 		return
 	}
 	//fmt.Printf("Value: %s", jsonContact)
+	
+	WebHookURL := "https://" + *serverAddr + WebHookEndpoint
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	req, err := http.NewRequest("POST", WebHookURL, bytes.NewBuffer(jsonContact))
@@ -49,6 +51,8 @@ func sendStateToWebHook(state *TagState) {
 		return
 	}
 	//fmt.Printf("Value: %s", jsonContact)
+	
+	WebHookURL := "https://" + *serverAddr + WebHookEndpoint
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	req, err := http.NewRequest("POST", WebHookURL, bytes.NewBuffer(jsonContact))

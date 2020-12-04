@@ -21,13 +21,14 @@ import (
 )
 
 var (
+	argAdapterID = 	flag.String("adapter_id", "hci0", "ID of the bluetooth adapter")
 	name   = flag.String("name", "LED", "name of remote peripheral")
 	serviceUuid        = flag.String("sUuid", "6e0e5437-0c82-4a6c-8c6b-503fad255e03", "uiid to search for")
 	characteristicUuid = flag.String("cUuid", "87c5a1c3-ebe6-426f-8a7d-bdcb710e10fb", "uiid to search for")
 	du                 = flag.Duration("du", 60*time.Second, "scanning duration")
 	sub                = flag.Duration("sub", 60*time.Second, "subscribe to notification and indication for a specified period")
 	serverAddr         = flag.String("server_addr", "192.168.0.153", "Address of the server with the data collector and other features")
-	argWebHook         = flag.String("send_web_hook", "https://192.168.0.153:8088/services/collector", "Send contacts to a web hook")
+	argWebHook         = flag.String("send_web_hook", ":8088/services/collector", "Send contacts to a web hook")
 	parametersUrl      = flag.String("param_url", ":8089/servicesNS/nobody/search/storage/collections/data/kvcollcontactstracing/TAG_PARAMETER", "Url used to recover parameters value")
 	argWebHookAPIKey   = flag.String("web_hook_api_key", "Authorization", "Set the key for API authorization")
 	argWebHookAPIValue = flag.String("web_hook_api_value", "Splunk 9fd18e88-3d02-489a-8d88-1d6aac0f6c3e", "Set the calue for API authorization")
@@ -41,6 +42,7 @@ var connectMuX sync.Mutex
 var fileMuX sync.Mutex
 
 var b []string
+var globalDataReceived bool
 
 var end = make(chan struct{})
 
@@ -49,24 +51,22 @@ func main() {
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Setup
 	flag.Parse()
 
-	WebHookURL = *argWebHook
+	WebHookEndpoint = *argWebHook
 	APIKey = *argWebHookAPIKey
 	APIValue = *argWebHookAPIValue
 	MaxConnections = *argMaxConnections
 	BearerToken = *argBearerToken
 	GatewayMode=*argGatewayMode
 	MaxParallelRoutines = *argMaxParallelRoutines
-	
-	adapterID := "hci0"
+	AdapterID = *argAdapterID
 	
 	log.SetLevel(log.TraceLevel)
 
-	btmgmt := hw.NewBtMgmt(adapterID)
+	btmgmt := hw.NewBtMgmt(AdapterID)
 
 	// set LE mode
 	btmgmt.SetPowered(false)
 	btmgmt.SetLe(true)
-	//btmgmt.SetBredr(false)
 	btmgmt.SetConnectable(false)
 	btmgmt.SetPowered(true)
 	
@@ -105,9 +105,9 @@ func main() {
 	go advertisingRoutine()
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Discover devices
-	log.Infof("Discovering on %s", adapterID)
+	log.Infof("Discovering on %s", AdapterID)
 
-	a, err := adapter.NewAdapter1FromAdapterID(adapterID)
+	a, err := adapter.NewAdapter1FromAdapterID(AdapterID)
 	if err != nil {
 		log.Infof("Error is %v\n", err)
 		return
@@ -115,69 +115,89 @@ func main() {
 	log.Infof("Adapter created")
 	
 	// Removes devices from the cache
-	//go cleanDeviceCacheRoutine(a)
 	flushDevices(a)
+	//go cleanDeviceCacheRoutine(a)
 	
 	filter := adapter.NewDiscoveryFilter()
 	
 	// Search for a specific service
 	filter.AddUUIDs("6e0e5437-0c82-4a6c-8c6b-503fad255e03")
 	filter.DuplicateData = false
+	
+	globalDataReceived = false
 
-	discovery, cancel, err := api.Discover(a, &filter)
-	if err != nil {
-		log.Infof("Error is %v\n", err)
-		return
-	}
-	defer cancel()	
-	
-	devChan := make(chan *device.Device1)
-	
-	//start a pool of synchronize routines
-	for i := 0; i < MaxParallelRoutines; i++ {
-		go syncronize(devChan, a)
-	}
-
-	for ev := range discovery {
-	
-		dev, err := device.NewDevice1(ev.Path)
+	for {
+		
+		log.Trace(">>>>>>>>>>>>>>>>>>>>>>>>>>>> Start discover\n")
+		discovery, cancel, err := api.Discover(a, &filter)
 		if err != nil {
-			//log.Infof("Scan error is %v\n", err)
-			continue 
+			log.Infof("Error is %v\n", err)
+			return
 		}
+		defer cancel()	
 		
-		if dev == nil || dev.Properties == nil {
-			continue
+		go restartDiscoverRoutine(cancel, discovery)
+		
+		devChan := make(chan *device.Device1)
+		
+		//start a pool of synchronize routines
+		for i := 0; i < MaxParallelRoutines; i++ {
+			go syncronize(devChan, a)
 		}
-		
-		p := dev.Properties
 
-		n := p.Alias
-		if p.Name != "" {
-			n = p.Name
-		}
-		log.Infof("Discovered (%s) %s", n, p.Address)
+		for ev := range discovery {
 		
-		//Change the passkey using MAC address of the peripheral
-		//Eg: 45:E3:7A:03:55:EF -----> 4 4 7 0 5 4
-		passkey := computePassKey(p.Address)
-		//ag.SetPassKey(123456)
-		ag.SetPassKey(passkey)
-		
-		err = connect(dev, ag, adapterID)
-		if err != nil {
-			log.Infof("Error in connect, %v\n", err)
+			dev, err := device.NewDevice1(ev.Path)
+			if err != nil {
+				//log.Infof("Scan error is %v\n", err)
+				continue 
+			}
+			if dev == nil || dev.Properties == nil {
+				continue
+			}
 			
-			// Remove this device from the cache for reconnection
-			log.Trace("Removing from cache ", dev.Path())
-			a.RemoveDevice(dev.Path())
+			p := dev.Properties
+
+			n := p.Alias
+			if p.Name != "" {
+				n = p.Name
+			}
+			log.Infof("Discovered (%s) %s", n, p.Address)
 			
-			continue
+			//Change the passkey using MAC address of the peripheral
+			//Eg: 45:E3:7A:03:55:EF -----> 4 4 7 0 5 4
+			passkey := computePassKey(p.Address)
+			//ag.SetPassKey(123456)
+			ag.SetPassKey(passkey)
+			
+			err = connect(dev, ag, AdapterID)
+			if err != nil {
+				log.Infof("Error in connect, %v\n", err)
+				
+				// Remove this device from the cache for reconnection
+				log.Trace("Removing from cache ", dev.Path())
+				a.RemoveDevice(dev.Path())
+				
+				continue
+			}
+			
+			devChan <- dev
 		}
-		
-		devChan <- dev
-		
 	}
+}
+
+func restartDiscoverRoutine(cancel func(), discovery chan *adapter.DeviceDiscovered) {
+	ticker := time.NewTicker(60 * time.Second)
+	for range ticker.C {
+		log.Trace(">>>>>>>>>>>>>>>>>>>>>>>>>>>> Check if data has been received globally\n")
+		if globalDataReceived == false {
+			log.Trace(">>>>>>>>>>>>>>>>>>>>>>>>>>>> No data received restarting discovery\n")
+			// Stop discover
+			cancel()
+			break
+		}
+		globalDataReceived = false
+	}	
 }
 
 func flushDevices(a *adapter.Adapter1) {
@@ -232,6 +252,7 @@ func syncronize(devChan chan *device.Device1, a *adapter.Adapter1){
 					
 					// Signal that a data has been received
 					dataReceived = true
+					globalDataReceived = true
 					
 					// Calculate and print the passed time
 					diff := time.Now().UnixNano() - prec
@@ -320,11 +341,18 @@ func advertisingRoutine() {
 	// Update parameter from Splunk
 	go updateParameters()
 	
-	
-
 	ticker := time.NewTicker(5 * time.Second)
 	for range ticker.C {
 		advertise()
+	}	
+}
+
+func cleanDeviceCacheRoutine(a *adapter.Adapter1) {
+
+	ticker := time.NewTicker(300 * time.Second)
+	for range ticker.C {
+		log.Trace(">>>>>>>>>>>>>>>>>>>>>>>>>>>> Force cleaning cache \n")
+		flushDevices(a)
 	}	
 }
 
@@ -458,17 +486,17 @@ func storeContacts(SplunkChannel chan StoredContact) {
 
 func advertise() {
 
-    _, err := exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0008", "1B", "1A", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22]).Output()
+    _, err := exec.Command("sudo", "hcitool", "-i", AdapterID, "cmd", "0x08", "0x0008", "1B", "1A", "ff", "a3", "09", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19], b[20], b[21], b[22]).Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
 	
-    _, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x0006", "90", "00", "90", "00", "06", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
+    _, err = exec.Command("sudo", "hcitool", "-i", AdapterID, "cmd", "0x08", "0x0006", "90", "00", "90", "00", "06", "00", "00", "00", "00", "00", "00", "00", "00", "07", "00").Output()
     if err != nil {
         fmt.Printf("%s", err)
     }
 	
-	_, err = exec.Command("sudo", "hcitool", "-i", "hci0", "cmd", "0x08", "0x000a", "01").Output()
+	_, err = exec.Command("sudo", "hcitool", "-i", AdapterID, "cmd", "0x08", "0x000a", "01").Output()
     if err != nil {
         fmt.Printf("%s", err)
     }

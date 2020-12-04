@@ -64,8 +64,8 @@ type ParameterPayload struct {
 	ACC_PARAM int8 `json:"ACC_PARAM"`
 }
 
-// WebHookURL - URL of the specific Web Hook
-var WebHookURL string
+// WebHookEndpoint - endpoint of the specific Web Hook
+var WebHookEndpoint string
 
 // WebHookAuthorization - URL of the specific Web Hook
 var WebHookAuthorization string
@@ -99,3 +99,6 @@ var GatewayMode string
 
 // MaxParallelRoutines - Max number of routines in synchronizing routines pool
 var MaxParallelRoutines int
+
+// AdapterID - ID of the bluetooth adapter
+var AdapterID string
