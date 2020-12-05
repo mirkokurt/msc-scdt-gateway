@@ -22,7 +22,7 @@ func sendContactToWebHook(contact StoredContact) {
 		return
 	}
 	//fmt.Printf("Value: %s", jsonContact)
-	
+
 	WebHookURL := "https://" + *serverAddr + WebHookEndpoint
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
@@ -39,7 +39,6 @@ func sendContactToWebHook(contact StoredContact) {
 		fileMuX.Lock()
 		f, err := os.OpenFile("logfile", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
 		check(err)
-		defer f.Close()
 		n3, err := f.WriteString(fmt.Sprintf("%s\n", jsonContact))
 		if err != nil {
 			fmt.Printf("Error writing in the file %s\n", err)
@@ -47,6 +46,7 @@ func sendContactToWebHook(contact StoredContact) {
 		fmt.Printf("wrote %d bytes\n", n3)
 
 		f.Sync()
+		f.Close()
 		fileMuX.Unlock()
 	}
 }
@@ -64,7 +64,7 @@ func sendStateToWebHook(state TagState) {
 		return
 	}
 	//fmt.Printf("Value: %s", jsonContact)
-	
+
 	WebHookURL := "https://" + *serverAddr + WebHookEndpoint
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
