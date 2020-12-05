@@ -1,7 +1,5 @@
 package main
 
-import "sync"
-
 // webContactHookMessage json body to be sent to the webhook
 type webContactHookMessage struct {
 	Event StoredContact `json:"event"`
@@ -23,21 +21,17 @@ type StoredContact struct {
 	AvgRSSI int8    `json:"avgRSSI,omitempty"`
 }
 
-// Current tags state
-var tagsState sync.Map
-
 // TagState - Last seen state of a tag
 type TagState struct {
 	TagID        string `json:"ID"`
 	LastSeen     int64  `json:"LastSeenTS,omitempty"`
 	SyncTime     int64  `json:"-"`
-	BatteryLevel int16 `json:"BatteryLevel,omitempty"`
-	TotalContact int16 `json:"ToSync,omitempty"`
-	SyncContact  int16 `json:"Synced,omitempty"`
-	OpMode  string `json:"TagMode,omitempty"`
-	ParamVersion  int8 `json:"ParamVersion,omitempty"`
-	FWVersion  string `json:"FWVersion,omitempty"`
-	
+	BatteryLevel int16  `json:"BatteryLevel,omitempty"`
+	TotalContact int16  `json:"ToSync,omitempty"`
+	SyncContact  int16  `json:"Synced,omitempty"`
+	OpMode       string `json:"TagMode,omitempty"`
+	ParamVersion int8   `json:"ParamVersion,omitempty"`
+	FWVersion    string `json:"FWVersion,omitempty"`
 }
 
 type SplunkEvent interface {
@@ -53,27 +47,27 @@ func (e TagState) store() {
 }
 
 type ParameterPayload struct {
-	VERSION                    	   int8  `json:"VERSION"`
-	DISTANCE_THR_PARAM             int8  `json:"DISTANCE_THR_PARAM"`
-	DURATION_THR_PARAM             int8  `json:"DURATION_THR_PARAM"`
-	TX_RATE_PARAM                  int8  `json:"TX_RATE_PARAM"`
-	GRACE_PERIOD_PARAM             int8  `json:"GRACE_PERIOD_PARAM"`
-	SCAN_WINDOW_PARAM              int8  `json:"SCAN_WINDOW_PARAM"`
-	SLEEP_WINDOW_PARAM             int8  `json:"SLEEP_WINDOW_PARAM"`
-	PACKET_COMPUTE_DIST_PARAM      int8  `json:"PACKET_COMPUTE_DIST_PARAM"`
-	ALERTING_DURATION_PARAM        int8  `json:"ALERTING_DURATION_PARAM"`
-	GW_SIGNAL_TIMEOUT_PARAM        int8  `json:"GW_SIGNAL_TIMEOUT_PARAM"`
-	GW_PACKET_COMPUTE_DIST_PARAM   int8  `json:"GW_PACKET_COMPUTE_DIST_PARAM"`
-	GW_AVG_RSSI_PARAM              int8  `json:"GW_AVG_RSSI_PARAM"`
-	BLE_TX_POWER_PARAM             int8  `json:"BLE_TX_POWER_PARAM"`
-	QUUPPA_PACKET_COMP_DIST_PARAM  int8  `json:"QUUPPA_PACKET_COMP_DIST_PARAM"`
-	QUUPPA_AVG_RSSI_PARAM          int8  `json:"QUUPPA_AVG_RSSI_PARAM"`
-	QUUPPA_FORCE_EXIT_PERIOD_PARAM int8  `json:"QUUPPA_FORCE_EXIT_PERIOD_PARAM"`
-	QUUPPA_TIMEOUT_PARAM           int16 `json:"QUUPPA_TIMEOUT_PARAM"`
-	NO_MOVE_ACTIONS_TIMEOUT_PARAM  int16 `json:"NO_MOVE_ACTIONS_TIMEOUT_PARAM"`
-	INTERNAL_TAG_STARTUP_DELAY_PARAM int8 `json:"INTERNAL_TAG_STARTUP_DELAY_PARAM"`
-	EXTERNAL_TAG_STARTUP_DELAY_PARAM int8 `json:"EXTERNAL_TAG_STARTUP_DELAY_PARAM"`
-	ACC_PARAM int8 `json:"ACC_PARAM"`
+	VERSION                          int8  `json:"VERSION"`
+	DISTANCE_THR_PARAM               int8  `json:"DISTANCE_THR_PARAM"`
+	DURATION_THR_PARAM               int8  `json:"DURATION_THR_PARAM"`
+	TX_RATE_PARAM                    int8  `json:"TX_RATE_PARAM"`
+	GRACE_PERIOD_PARAM               int8  `json:"GRACE_PERIOD_PARAM"`
+	SCAN_WINDOW_PARAM                int8  `json:"SCAN_WINDOW_PARAM"`
+	SLEEP_WINDOW_PARAM               int8  `json:"SLEEP_WINDOW_PARAM"`
+	PACKET_COMPUTE_DIST_PARAM        int8  `json:"PACKET_COMPUTE_DIST_PARAM"`
+	ALERTING_DURATION_PARAM          int8  `json:"ALERTING_DURATION_PARAM"`
+	GW_SIGNAL_TIMEOUT_PARAM          int8  `json:"GW_SIGNAL_TIMEOUT_PARAM"`
+	GW_PACKET_COMPUTE_DIST_PARAM     int8  `json:"GW_PACKET_COMPUTE_DIST_PARAM"`
+	GW_AVG_RSSI_PARAM                int8  `json:"GW_AVG_RSSI_PARAM"`
+	BLE_TX_POWER_PARAM               int8  `json:"BLE_TX_POWER_PARAM"`
+	QUUPPA_PACKET_COMP_DIST_PARAM    int8  `json:"QUUPPA_PACKET_COMP_DIST_PARAM"`
+	QUUPPA_AVG_RSSI_PARAM            int8  `json:"QUUPPA_AVG_RSSI_PARAM"`
+	QUUPPA_FORCE_EXIT_PERIOD_PARAM   int8  `json:"QUUPPA_FORCE_EXIT_PERIOD_PARAM"`
+	QUUPPA_TIMEOUT_PARAM             int16 `json:"QUUPPA_TIMEOUT_PARAM"`
+	NO_MOVE_ACTIONS_TIMEOUT_PARAM    int16 `json:"NO_MOVE_ACTIONS_TIMEOUT_PARAM"`
+	INTERNAL_TAG_STARTUP_DELAY_PARAM int8  `json:"INTERNAL_TAG_STARTUP_DELAY_PARAM"`
+	EXTERNAL_TAG_STARTUP_DELAY_PARAM int8  `json:"EXTERNAL_TAG_STARTUP_DELAY_PARAM"`
+	ACC_PARAM                        int8  `json:"ACC_PARAM"`
 }
 
 // WebHookEndpoint - endpoint of the specific Web Hook

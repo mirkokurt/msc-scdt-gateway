@@ -242,6 +242,8 @@ func syncronize(devChan chan *device.Device1, a *adapter.Adapter1) {
 			log.Infof("Device address is %s", p.Address)
 			id1 := p.Address
 			prec := time.Now().UnixNano()
+			var ts TagState
+			ts.TagID = p.Address
 
 			for propUpdate := range watchProps {
 
@@ -258,9 +260,10 @@ func syncronize(devChan chan *device.Device1, a *adapter.Adapter1) {
 					prec = time.Now().UnixNano()
 
 					// Format and send the contact to Splunk
-					processUpdate(id1, propUpdate.Value.([]byte))
+					processUpdate(id1, propUpdate.Value.([]byte), &ts)
 				}
 			}
+			SplunkChannel <- ts
 
 			log.Trace("Listener routine stopped")
 		}()
@@ -273,8 +276,6 @@ func syncronize(devChan chan *device.Device1, a *adapter.Adapter1) {
 			}
 			dataReceived = false
 		}
-
-		storeState(p.Address)
 
 		log.Trace("Disconnecting from ", p.Address)
 		dev.Disconnect()
@@ -365,7 +366,7 @@ func updateParameters() {
 	}
 }
 
-func processUpdate(id1 string, b []byte) {
+func processUpdate(id1 string, b []byte, ts *TagState) {
 
 	id2_check := binary.LittleEndian.Uint32(b[0:4])
 
@@ -391,29 +392,14 @@ func processUpdate(id1 string, b []byte) {
 		}
 		paramVersion := int8(b[14] & 63)
 
-		ts, found := tagsState.Load(id1)
-		if found {
-			ts.(*TagState).LastSeen = nowTimestamp()
-			ts.(*TagState).SyncTime = nowTimestamp() - syncTS
-			ts.(*TagState).TotalContact = totalContact
-			ts.(*TagState).SyncContact = 0
-			ts.(*TagState).BatteryLevel = batteryLevel
-			ts.(*TagState).OpMode = opModeString
-			ts.(*TagState).ParamVersion = paramVersion
-			ts.(*TagState).FWVersion = fwVer
-		} else {
-			var its TagState
-			its.TagID = id1
-			its.LastSeen = nowTimestamp()
-			its.SyncTime = nowTimestamp() - syncTS
-			its.TotalContact = totalContact
-			its.SyncContact = 0
-			its.BatteryLevel = batteryLevel
-			its.OpMode = opModeString
-			its.ParamVersion = paramVersion
-			its.FWVersion = fwVer
-			tagsState.Store(id1, &its)
-		}
+		ts.LastSeen = nowTimestamp()
+		ts.SyncTime = nowTimestamp() - syncTS
+		ts.TotalContact = totalContact
+		ts.SyncContact = 0
+		ts.BatteryLevel = batteryLevel
+		ts.OpMode = opModeString
+		ts.ParamVersion = paramVersion
+		ts.FWVersion = fwVer
 
 	} else {
 		// otherwise it is a contact message
@@ -425,20 +411,17 @@ func processUpdate(id1 string, b []byte) {
 		avgRSSI := int8(b[12])
 
 		zoneID := binary.LittleEndian.Uint16(b[13:15])
-		//fmt.Println("ZoneID is : ", zoneID)
 		room := ""
 		// ignore if 0xBFFF
 		if zoneID != 49151 {
 			room = "Zone" + fmt.Sprint(zoneID)
 		}
-		//room := "Zone_" + fmt.Sprint(binary.LittleEndian.Uint16(b[13:15]))
 
 		adjustedTs := nowTimestamp()
-		ts, found := tagsState.Load(id1)
 		// If the sync time is found and it is different from 0, compute the adjusted time otherwise use time.now()
-		if found {
-			adjustedTs = (startTs + ts.(*TagState).SyncTime)
-			ts.(*TagState).SyncContact += 1
+		if ts.SyncTime != 0 {
+			adjustedTs = startTs + ts.SyncTime
+			ts.SyncContact += 1
 		} else {
 			fmt.Println("Error: no last sync time found for the tag : ", id1)
 		}
@@ -460,16 +443,6 @@ func nowTimestamp() int64 {
 	return time.Now().UnixNano() / (int64(time.Millisecond) / int64(time.Nanosecond))
 }
 
-func storeState(TagId string) {
-	fmt.Printf("Sending state for tag %s \n", TagId)
-	ts, found := tagsState.Load(TagId)
-	if found {
-		fmt.Printf("Sending state %+v \n", ts)
-		SplunkChannel <- ts.(*TagState)
-		//sendStateToWebHook(ts.(*TagState))
-	}
-}
-
 func storeEvents() {
 	for {
 		e := <-SplunkChannel
@@ -480,9 +453,6 @@ func storeEvents() {
 
 		fmt.Printf("Sending contact %+v \n", c)
 		e.store()
-
-		//sendContactToWebHook(c)
-
 	}
 }
 
