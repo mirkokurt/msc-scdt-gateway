@@ -97,9 +97,9 @@ func main() {
 		CreateFile("logfile")
 	}
 	
-	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Create the routine that send contact to Splunk
-	SplunkChannel = make(chan StoredContact, 5000)
-	go storeContacts(SplunkChannel)
+	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Create the routine that send contact and state to Splunk
+	SplunkChannel = make(chan SplunkEvent, 5000)
+	go storeContacts()
 	
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Start advertising
 	go advertisingRoutine()
@@ -134,7 +134,7 @@ func main() {
 			log.Infof("Error is %v\n", err)
 			return
 		}
-		defer cancel()	
+		//defer cancel()	
 		
 		go restartDiscoverRoutine(cancel, discovery)
 		
@@ -229,7 +229,6 @@ func syncronize(devChan chan *device.Device1, a *adapter.Adapter1){
 			return
 		}
 			
-		
 		log.Infof("Subscribe to characteristic")
 		watchProps, err := charact.WatchProperties()
 		if err != nil {
@@ -469,18 +468,24 @@ func storeState(TagId string) {
 	ts, found := tagsState.Load(TagId)
 	if found {
 		fmt.Printf("Sending state %+v \n", ts)
-		sendStateToWebHook(ts.(*TagState))
+		SplunkChannel <- ts.(*TagState)
+		//sendStateToWebHook(ts.(*TagState))
 	}
 }
 
-func storeContacts(SplunkChannel chan StoredContact) {
+func storeContacts() {
 	for {
-		c := <-SplunkChannel
+		e := <-SplunkChannel
+		
+		if e == nil {
+			return
+		}
+		
 		fmt.Printf("Sending contact %+v \n", c)
-		sendContactToWebHook(c)
+		e.store()
+		
+		//sendContactToWebHook(c)
 
-		// Not send too fast
-		//time.Sleep(100 * time.Millisecond)
 	}
 }
 

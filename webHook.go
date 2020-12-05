@@ -34,16 +34,29 @@ func sendContactToWebHook(contact StoredContact) {
 
 	_, err = http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Printf("Error sending the contact to the web hook, %v", err)
+		fmt.Printf("Error sending the contact to the web hook, %v \n", err)
+		fmt.Printf("Writing in the file\n")
+		fileMuX.Lock()
+		f, err := os.OpenFile("logfile", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+		check(err)
+		defer f.Close()
+		n3, err := f.WriteString(fmt.Sprintf("%s\n", jsonContact))
+		if err != nil {
+			fmt.Printf("Error writing in the file %s\n", err)
+		}
+		fmt.Printf("wrote %d bytes\n", n3)
+
+		f.Sync()
+		fileMuX.Unlock()
 	}
 }
 
 // The function send the contact to a web hook
-func sendStateToWebHook(state *TagState) {
+func sendStateToWebHook(state TagState) {
 
 	var message webStateHookMessage
 
-	message.Event = *state
+	message.Event = state
 
 	jsonContact, err := json.Marshal(message)
 	if err != nil {
@@ -63,20 +76,7 @@ func sendStateToWebHook(state *TagState) {
 
 	_, err = http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Printf("Error sending the contact to the web hook, %v", err)
-		fmt.Printf("Writing in the file\n")
-		fileMuX.Lock()
-		f, err := os.OpenFile("logfile", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-		check(err)
-		defer f.Close()
-		n3, err := f.WriteString(fmt.Sprintf("%s\n", jsonContact))
-		if err != nil {
-			fmt.Printf("Error writing in the file %s\n", err)
-		}
-		fmt.Printf("wrote %d bytes\n", n3)
-
-		f.Sync()
-		fileMuX.Unlock()
+		fmt.Printf("Error sending state to the web hook, %v \n", err)
 	}
 }
 

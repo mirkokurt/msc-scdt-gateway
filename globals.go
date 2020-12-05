@@ -40,6 +40,18 @@ type TagState struct {
 	
 }
 
+type SplunkEvent interface {
+	store()
+}
+
+func (e StoredContact) store() {
+	sendContactToWebHook(e)
+}
+
+func (e TagState) store() {
+	sendStateToWebHook(e)
+}
+
 type ParameterPayload struct {
 	VERSION                    	   int8  `json:"VERSION"`
 	DISTANCE_THR_PARAM             int8  `json:"DISTANCE_THR_PARAM"`
@@ -77,7 +89,7 @@ var APIKey string
 var APIValue string
 
 // splunkChannel - Channel to be shared between routines in order to store contacts
-var SplunkChannel chan StoredContact
+var SplunkChannel chan SplunkEvent
 
 // SplunkAddress - Ip address of the Splunk server
 var SplunkAddress string
