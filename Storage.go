@@ -41,16 +41,18 @@ func UploadContactsFromQueue() {
 		// Dequeue the next item in the queue and block until one is available
 		if iface, err = StorageQueue.DequeueBlock(); err != nil {
 			log.Warn("Error dequeuing item ", err)
-		}
-		c, ok := iface.(*StoredContact)
-		if !ok {
-			log.Warn("Dequeued object is not an StoredContact pointer")
+		} else {
+			c, ok := iface.(*StoredContact)
+			if !ok {
+				log.Warn("Dequeued object is not an StoredContact pointer")
+			}
+
+			// Reinsert the Contact into the store channel
+			SplunkChannel <- c
+
 		}
 
-		// Reinsert the Contact into the store channel
-		SplunkChannel <- c
-
-		time.Sleep(5 * time.Second)
+		time.Sleep(5 * time.Millisecond)
 	}
 	if StorageQueue != nil {
 		StorageQueue.Close()
