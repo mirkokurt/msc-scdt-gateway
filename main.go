@@ -91,14 +91,15 @@ func main() {
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Init parameters to be sent to Tags
 	b = []string{"00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00", "00"}
 
-	// Create backup file if it not exists
-	if !FileExists("logfile") {
-		CreateFile("logfile")
-	}
-
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Create the routine that send contact and state to Splunk
 	SplunkChannel = make(chan SplunkEvent, 5000)
 	go storeEvents()
+
+	// Open (or create) persistent storage queue
+	OpenQueue()
+
+	// Load existing contacts
+	go UploadContactsFromQueue()
 
 	// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Start advertising
 	go advertisingRoutine()

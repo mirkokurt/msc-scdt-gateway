@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 )
 
 // The function send the contact to a web hook
@@ -31,23 +30,10 @@ func sendContactToWebHook(contact StoredContact) {
 	if APIKey != "" && APIValue != "" {
 		req.Header.Add(APIKey, APIValue)
 	}
-
 	_, err = http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending the contact to the web hook, %v \n", err)
-		fmt.Printf("Writing in the file\n")
-		fileMuX.Lock()
-		f, err := os.OpenFile("logfile", os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-		check(err)
-		n3, err := f.WriteString(fmt.Sprintf("%s\n", jsonContact))
-		if err != nil {
-			fmt.Printf("Error writing in the file %s\n", err)
-		}
-		fmt.Printf("wrote %d bytes\n", n3)
-
-		f.Sync()
-		f.Close()
-		fileMuX.Unlock()
+		EnqueueContact(contact)
 	}
 }
 
@@ -77,11 +63,5 @@ func sendStateToWebHook(state TagState) {
 	_, err = http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending state to the web hook, %v \n", err)
-	}
-}
-
-func check(e error) {
-	if e != nil {
-		panic(e)
 	}
 }
