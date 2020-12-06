@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 )
 
@@ -25,15 +27,18 @@ func sendContactToWebHook(contact StoredContact) {
 	WebHookURL := "https://" + *serverAddr + WebHookEndpoint
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	req, err := http.NewRequest("POST", WebHookURL, bytes.NewBuffer(jsonContact))
+	req, _ := http.NewRequest("POST", WebHookURL, bytes.NewBuffer(jsonContact))
 	req.Header.Add("Content-Type", "application/json")
 	if APIKey != "" && APIValue != "" {
 		req.Header.Add(APIKey, APIValue)
 	}
-	_, err = http.DefaultClient.Do(req)
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending the contact to the web hook, %v \n", err)
 		EnqueueContact(contact)
+	} else {
+		io.Copy(ioutil.Discard, res.Body)
+		res.Body.Close()
 	}
 }
 
