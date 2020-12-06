@@ -59,14 +59,16 @@ func sendStateToWebHook(state TagState) {
 	WebHookURL := "https://" + *serverAddr + WebHookEndpoint
 
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	req, err := http.NewRequest("POST", WebHookURL, bytes.NewBuffer(jsonContact))
+	req, _ := http.NewRequest("POST", WebHookURL, bytes.NewBuffer(jsonContact))
 	req.Header.Add("Content-Type", "application/json")
 	if APIKey != "" && APIValue != "" {
 		req.Header.Add(APIKey, APIValue)
 	}
-
-	_, err = http.DefaultClient.Do(req)
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending state to the web hook, %v \n", err)
+	} else {
+		io.Copy(ioutil.Discard, res.Body)
+		res.Body.Close()
 	}
 }
