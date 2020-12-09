@@ -48,7 +48,7 @@ func UploadContactsFromQueue() {
 			}
 
 			// Reinsert the Contact into the store channel
-			SplunkChannel <- c
+			SplunkChannel <- *c
 
 		}
 
