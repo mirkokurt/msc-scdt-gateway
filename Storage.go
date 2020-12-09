@@ -20,40 +20,45 @@ func OpenQueue() {
 	segmentSize := 500
 
 	var err error
-	StorageQueue, err = dque.Open(qName, qDir, segmentSize, ContactBuilder)
+	StorageQueue, err = dque.NewOrOpen(qName, qDir, segmentSize, ContactBuilder)
 	if err != nil {
-		StorageQueue, err = dque.New(qName, qDir, segmentSize, ContactBuilder)
+		log.Fatal("Error creating new dque ", err)
 	}
-	check(err)
 }
 
 func EnqueueContact(c StoredContact) {
 	err := StorageQueue.Enqueue(&c)
-	log.Warn("Encode contact failed with: %v\n", err)
+	if err != nil {
+		log.Warnf("Encode contact failed with: %v\n", err)
+	}
 }
 
 func UploadContactsFromQueue() {
-	for {
 
-		var iface interface{}
-		var err error
+	ticker := time.NewTicker(600 * time.Second)
+	for range ticker.C {
+		for {
+			var iface interface{}
+			var err error
 
-		// Dequeue the next item in the queue and block until one is available
-		if iface, err = StorageQueue.DequeueBlock(); err != nil {
-			log.Warn("Error dequeuing item ", err)
-		} else {
-			c, ok := iface.(*StoredContact)
-			if !ok {
-				log.Warn("Dequeued object is not an StoredContact pointer")
-			}
+			// Dequeue the next item in the queue 
+			if iface, err = StorageQueue.Dequeue(); err != nil  {
+				break
+			} else {
+				log.Warnf(">>>>>>>>>>>>>>>>>>>>>>>>>> Dequeueing an object!\n")
+				c, ok := iface.(*StoredContact)
+				if !ok {
+					log.Warnf("Dequeued object is not an StoredContact pointer")
+				}
+				
+				// Reinsert the Contact into the store channel
+				SplunkChannel <- *c
 
-			// Reinsert the Contact into the store channel
-			SplunkChannel <- *c
-
+			}	
+			time.Sleep(5 * time.Millisecond)
 		}
-
-		time.Sleep(5 * time.Millisecond)
 	}
+	
 	if StorageQueue != nil {
 		StorageQueue.Close()
 	}

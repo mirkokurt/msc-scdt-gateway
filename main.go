@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"net/http"
 
 	"github.com/godbus/dbus"
 	"github.com/muka/go-bluetooth/api"
@@ -43,6 +44,7 @@ var fileMuX sync.Mutex
 
 var b []string
 var globalDataReceived bool
+var httpClient = http.Client{Timeout: 5 * time.Second}
 
 var end = make(chan struct{})
 
@@ -452,7 +454,7 @@ func storeEvents() {
 			return
 		}
 
-		fmt.Printf("Sending contact %+v \n", c)
+		fmt.Printf("Sending contact %+v \n", e)
 		e.store()
 	}
 }

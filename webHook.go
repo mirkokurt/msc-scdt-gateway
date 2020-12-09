@@ -32,7 +32,7 @@ func sendContactToWebHook(contact StoredContact) {
 	if APIKey != "" && APIValue != "" {
 		req.Header.Add(APIKey, APIValue)
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending the contact to the web hook, %v \n", err)
 		EnqueueContact(contact)
@@ -64,7 +64,7 @@ func sendStateToWebHook(state TagState) {
 	if APIKey != "" && APIValue != "" {
 		req.Header.Add(APIKey, APIValue)
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error sending state to the web hook, %v \n", err)
 	} else {
