@@ -5,12 +5,12 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"net/http"
 
 	"github.com/godbus/dbus"
 	"github.com/muka/go-bluetooth/api"
@@ -168,9 +168,9 @@ func main() {
 
 			//Change the passkey using MAC address of the peripheral
 			//Eg: 45:E3:7A:03:55:EF -----> 4 4 7 0 5 4
-			passkey := computePassKey(p.Address)
-			//ag.SetPassKey(123456)
-			ag.SetPassKey(passkey)
+			//passkey := computePassKey(p.Address)
+			ag.SetPassKey(123456)
+			//ag.SetPassKey(passkey)
 
 			err = connect(dev, ag, AdapterID)
 			if err != nil {
@@ -454,7 +454,7 @@ func storeEvents() {
 			return
 		}
 
-		fmt.Printf("Sending contact %+v \n", e)
+		fmt.Printf("Sending event %+v \n", e)
 		e.store()
 	}
 }
