@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	log "github.com/sirupsen/logrus"
 )
 
 func readParamenters(b []string) {
@@ -21,15 +22,15 @@ func readParamenters(b []string) {
 
 	req.Header.Add("Authorization", Token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		fmt.Printf("Error during the request of parameters, %v", err)
+		fmt.Printf("Error during the request of parameters, %v \n", err)
 	} else {
 		fmt.Printf("Resp is, %v", resp)
 		defer resp.Body.Close()
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			fmt.Println("Error reading the body of the response: ", err)
+			fmt.Printf("Error reading the body of the response: %v\n", err)
 		}
 		var payload ParameterPayload
 		json.Unmarshal(body, &payload)
@@ -68,8 +69,9 @@ func readParamenters(b []string) {
 		b[20] = hexToString(byte(payload.NO_MOVE_ACTIONS_TIMEOUT_PARAM >> 8))
 		b[22] = hexToString(byte(payload.ACC_PARAM))
 		
-
 	}
+	
+	log.Infof("The array used for parameters will be %v\n", b)
 }
 
 func hexToString(b byte) string {
