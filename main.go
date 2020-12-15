@@ -387,11 +387,11 @@ func processUpdate(id1 string, b []byte, ts *TagState) {
 		opModeString := ""
 		switch opMode {
 		case 1:
-			opModeString = "Client"
+			opModeString = "Guest"
 		case 2:
-			opModeString = "Worker"
+			opModeString = "Crew"
 		default:
-			opModeString = ""
+			opModeString = "Normal"
 		}
 		paramVersion := int8(b[14] & 63)
 
